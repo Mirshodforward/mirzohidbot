@@ -16,6 +16,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.config import get_settings
 from bot.db.session import init_db
 from bot.handlers import register_handlers
+from bot.services.rent_worker import rent_background_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +39,8 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     register_handlers(dp)
 
-    logging.info("Bot ishga tushdi.")
+    asyncio.create_task(rent_background_loop(bot))
+    logging.info("Bot ishga tushdi (rent fon vazifasi yoqilgan).")
     await dp.start_polling(bot)
 
 

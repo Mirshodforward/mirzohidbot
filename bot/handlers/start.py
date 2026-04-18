@@ -1,23 +1,64 @@
+import html
+
 from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import select
 
 from bot.config import is_admin
-from bot.db.models import User
+from bot.db.models import Store, User
 from bot.db.session import async_session_maker
 from bot.keyboards import admin_main_menu, contact_request_keyboard, user_main_menu
+from bot.states import InviteLinkStates
 
 router = Router(name="start")
 
 
+def _start_payload(message: Message) -> str | None:
+    raw = (message.text or "").strip()
+    if not raw.startswith("/start"):
+        return None
+    parts = raw.split(maxsplit=1)
+    if len(parts) < 2:
+        return None
+    return parts[1].strip()
+
+
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, state: FSMContext) -> None:
     if not message.from_user:
         return
 
     tg = message.from_user
+    await state.clear()
+
+    payload = _start_payload(message)
+    if payload and payload.startswith("inv_") and not is_admin(tg.id):
+        async with async_session_maker() as session:
+            st = await session.scalar(
+                select(Store).where(Store.owner_invite_token == payload)
+            )
+        if not st:
+            await message.answer(
+                "❌ Havola yaroqsiz yoki allaqachon ishlatilgan.\n\n"
+                "Yordam uchun admin bilan bog'laning.",
+            )
+            return
+        await state.set_state(InviteLinkStates.waiting_contact)
+        await state.update_data(invite_store_id=st.id, invite_token=payload)
+        exp = html.escape((st.owner_phone or "").strip() or "—")
+        nm = html.escape((st.name or "").strip() or "—")
+        await message.answer(
+            f"🏪 <b>{nm}</b>\n\n"
+            "Magazingizni botga bog'lash uchun quyidagi tugma orqali "
+            "<b>o'sha telefon raqamli</b> kontaktingizni yuboring.\n\n"
+            f"Kutilayotgan raqam: <code>{exp}</code>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=contact_request_keyboard(),
+        )
+        return
 
     has_phone = False
     async with async_session_maker() as session:

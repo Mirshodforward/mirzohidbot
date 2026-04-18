@@ -17,7 +17,7 @@ from aiogram.types import (
 )
 from sqlalchemy import desc, select
 
-from bot.db.models import Store, StoreElectricityLog
+from bot.db.models import Store, StoreDebtPayment, StoreElectricityLog
 from bot.db.session import async_session_maker
 from bot.filters import AdminFilter
 from bot.keyboards import (
@@ -28,7 +28,8 @@ from bot.keyboards import (
 )
 from bot.states import EditStoreStates
 from bot.utils.excel_stores import stores_to_xlsx_bytes
-from bot.utils.store_flow import TZ_TASHKENT, fmt_datetime, parse_amount, parse_kw
+from bot.utils.rent_accrual import apply_rent_accrual_to_store
+from bot.utils.store_flow import TZ_TASHKENT, fmt_datetime, fmt_money, parse_amount, parse_kw
 from bot.utils.store_format import store_card_html
 
 router = Router(name="admin_stores")
@@ -36,7 +37,19 @@ router.message.filter(AdminFilter())
 router.callback_query.filter(AdminFilter())
 
 PER_PAGE = 10
-SUBACTIONS = frozenset({"nm", "mo", "kw", "lg"})
+SUBACTIONS = frozenset({"nm", "mo", "kw", "lg", "pd"})
+
+
+async def _get_store_refreshed(sid: int) -> Store | None:
+    """Bitta magazinni qarz sikllari bo'yicha yangilab qaytaradi."""
+    now = datetime.now(TZ_TASHKENT)
+    async with async_session_maker() as session:
+        s = await session.get(Store, sid)
+        if not s:
+            return None
+        if apply_rent_accrual_to_store(s, now):
+            await session.commit()
+        return s
 
 
 def _btn_label(name: str, max_len: int = 26) -> str:
@@ -74,6 +87,33 @@ def _list_kb(stores: list[Store], page: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _delete_confirm_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
+    if list_mid is not None:
+        m = str(list_mid)
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Ha, o'chirish",
+                        callback_data=f"as:{sid}:del:ok:{m}",
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ Bekor",
+                        callback_data=f"as:{sid}:del:cn:{m}",
+                    ),
+                ],
+            ]
+        )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"as:{sid}:del:ok"),
+                InlineKeyboardButton(text="❌ Bekor", callback_data=f"as:{sid}:del:cn"),
+            ],
+        ]
+    )
+
+
 def _store_detail_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
     if list_mid is not None:
         m = str(list_mid)
@@ -86,6 +126,18 @@ def _store_detail_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
                 [
                     InlineKeyboardButton(text="⚡ Tok", callback_data=f"as:{sid}:kw:{m}"),
                     InlineKeyboardButton(text="📜 Tarix", callback_data=f"as:{sid}:lg:{m}"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="➖ Ayirish (to'lov)",
+                        callback_data=f"as:{sid}:pd:{m}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🗑 O'chirish",
+                        callback_data=f"as:{sid}:del:{m}",
+                    ),
                 ],
                 [InlineKeyboardButton(text="⬅️ Ro'yxat", callback_data=f"lb:{m}")],
             ]
@@ -100,6 +152,8 @@ def _store_detail_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="⚡ Tok", callback_data=f"as:{sid}:kw"),
                 InlineKeyboardButton(text="📜 Tarix", callback_data=f"as:{sid}:lg"),
             ],
+            [InlineKeyboardButton(text="➖ Ayirish (to'lov)", callback_data=f"as:{sid}:pd")],
+            [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"as:{sid}:del")],
             [InlineKeyboardButton(text="⬅️ Ro'yxat", callback_data="lp:0")],
         ]
     )
@@ -127,9 +181,17 @@ def _admin_store_text(s: Store) -> str:
 
 
 async def _load_stores_ordered() -> list[Store]:
+    now = datetime.now(TZ_TASHKENT)
     async with async_session_maker() as session:
         r = await session.execute(select(Store).order_by(Store.id.desc()))
-        return list(r.scalars().all())
+        stores = list(r.scalars().all())
+        dirty = False
+        for s in stores:
+            if apply_rent_accrual_to_store(s, now):
+                dirty = True
+        if dirty:
+            await session.commit()
+        return stores
 
 
 @router.message(StateFilter(default_state), F.text == ADMIN_BTN_LIST)
@@ -198,8 +260,7 @@ async def cb_log_back_to_store(callback: CallbackQuery, state: FSMContext) -> No
     sid = int(parts[1])
     list_mid = int(parts[2])
     await callback.answer()
-    async with async_session_maker() as session:
-        s = await session.get(Store, sid)
+    s = await _get_store_refreshed(sid)
     if not s or not callback.message:
         return
     await callback.message.edit_text(
@@ -248,12 +309,126 @@ async def cb_list_page(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+def _list_back_markup(list_mid: int | None) -> InlineKeyboardMarkup:
+    if list_mid is not None:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Ro'yxat", callback_data=f"lb:{list_mid}")],
+            ]
+        )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Ro'yxat", callback_data="lp:0")],
+        ]
+    )
+
+
+async def _store_delete_flow(
+    callback: CallbackQuery, state: FSMContext, parts: list[str]
+) -> None:
+    """as:{sid}:del | as:{sid}:del:{m} | as:{sid}:del:ok[:m] | as:{sid}:del:cn[:m]"""
+    await state.clear()
+    if len(parts) < 3 or parts[0] != "as" or not parts[1].isdigit() or parts[2] != "del":
+        await callback.answer("Noto'g'ri")
+        return
+    sid = int(parts[1])
+    if not callback.message:
+        await callback.answer()
+        return
+
+    if len(parts) == 3:
+        await _show_delete_confirm(callback, sid, None)
+        return
+    if len(parts) == 4:
+        p3 = parts[3]
+        if p3.isdigit():
+            await _show_delete_confirm(callback, sid, int(p3))
+            return
+        if p3 == "ok":
+            await _execute_store_delete(callback, sid, None)
+            return
+        if p3 == "cn":
+            await _cancel_delete_confirm(callback, sid, None)
+            return
+        await callback.answer("Noto'g'ri")
+        return
+    if len(parts) == 5 and parts[4].isdigit():
+        m = int(parts[4])
+        if parts[3] == "ok":
+            await _execute_store_delete(callback, sid, m)
+            return
+        if parts[3] == "cn":
+            await _cancel_delete_confirm(callback, sid, m)
+            return
+    await callback.answer("Noto'g'ri")
+
+
+async def _show_delete_confirm(
+    callback: CallbackQuery, sid: int, list_mid: int | None
+) -> None:
+    s = await _get_store_refreshed(sid)
+    if not s:
+        await callback.message.edit_text("Magazin topilmadi.")
+        await callback.answer()
+        return
+    name = html.escape((s.name or "").strip() or "—")
+    await callback.message.edit_text(
+        f"🗑 <b>Magazinni o'chirish</b>\n\n"
+        f"{name}\n\n"
+        "Bu amalni qaytarib bo'lmaydi. Rostdan o'chirasizmi?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_delete_confirm_kb(sid, list_mid),
+    )
+    await callback.answer()
+
+
+async def _cancel_delete_confirm(
+    callback: CallbackQuery, sid: int, list_mid: int | None
+) -> None:
+    s = await _get_store_refreshed(sid)
+    if not s:
+        await callback.message.edit_text("Magazin topilmadi.")
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        _admin_store_text(s),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_store_detail_kb(sid, list_mid),
+    )
+    await callback.answer()
+
+
+async def _execute_store_delete(
+    callback: CallbackQuery, sid: int, list_mid: int | None
+) -> None:
+    name_for_msg = ""
+    async with async_session_maker() as session:
+        s = await session.get(Store, sid)
+        if not s:
+            await callback.message.edit_text("Magazin topilmadi.")
+            await callback.answer()
+            return
+        name_for_msg = (s.name or "").strip() or "—"
+        await session.delete(s)
+        await session.commit()
+    shown = html.escape(name_for_msg)
+    await callback.message.edit_text(
+        f"✅ Magazin o'chirildi.\n\n📛 {shown}",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_list_back_markup(list_mid),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("as:"))
 async def cb_store_routes(callback: CallbackQuery, state: FSMContext) -> None:
     raw = (callback.data or "").strip()
     parts = raw.split(":")
     if len(parts) == 2 and parts[0] == "as" and parts[1].isdigit():
         await _store_open(callback, state, int(parts[1]))
+        return
+    if len(parts) >= 3 and parts[0] == "as" and parts[1].isdigit() and parts[2] == "del":
+        await _store_delete_flow(callback, state, parts)
         return
     if len(parts) >= 3 and parts[0] == "as" and parts[1].isdigit() and parts[2] in SUBACTIONS:
         list_mid: int | None = None
@@ -266,8 +441,7 @@ async def cb_store_routes(callback: CallbackQuery, state: FSMContext) -> None:
 
 async def _store_open(callback: CallbackQuery, state: FSMContext, sid: int) -> None:
     await state.clear()
-    async with async_session_maker() as session:
-        s = await session.get(Store, sid)
+    s = await _get_store_refreshed(sid)
     if not s:
         if callback.message and callback.message.document:
             await callback.answer("Magazin topilmadi.", show_alert=True)
@@ -305,8 +479,7 @@ async def _store_sub(
     list_mid: int | None = None,
 ) -> None:
     await callback.answer()
-    async with async_session_maker() as session:
-        s = await session.get(Store, sid)
+    s = await _get_store_refreshed(sid)
     if not s:
         if callback.message:
             await callback.message.edit_text("Magazin topilmadi.")
@@ -352,6 +525,14 @@ async def _store_sub(
     elif sub == "mo":
         await state.set_state(EditStoreStates.monthly)
         prompt = "Yangi <b>oylik summani</b> yozing (so'm, faqat raqam):"
+    elif sub == "pd":
+        await state.set_state(EditStoreStates.debt_subtract)
+        debt = int(s.debt_balance or 0)
+        prompt = (
+            "Qarzdan <b>ayriladigan</b> summani yozing (so'm, faqat raqam) — "
+            "egasi bergan pul miqdori.\n\n"
+            f"Hozirgi qarz: <b>{fmt_money(debt)}</b> so'm"
+        )
     else:  # kw
         await state.set_state(EditStoreStates.kw)
         cur = s.electricity_kw
@@ -375,6 +556,7 @@ async def _store_sub(
 @router.message(EditStoreStates.name, F.text == BTN_CANCEL)
 @router.message(EditStoreStates.monthly, F.text == BTN_CANCEL)
 @router.message(EditStoreStates.kw, F.text == BTN_CANCEL)
+@router.message(EditStoreStates.debt_subtract, F.text == BTN_CANCEL)
 async def edit_store_cancel(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("Bekor qilindi.", reply_markup=admin_main_menu())
@@ -480,6 +662,7 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
                 period_from = period_from.astimezone(TZ_TASHKENT)
             period_from_out = period_from
             delta = new_k - old_k
+            s.debt_tok = delta
             session.add(
                 StoreElectricityLog(
                     store_id=sid,
@@ -490,19 +673,78 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
                     delta_kw=delta,
                 )
             )
+        else:
+            s.debt_tok = 0
         s.electricity_kw = new_k
         await session.commit()
 
     await state.clear()
     extra = ""
     if old_k is not None and period_from_out is not None:
+        dkw = new_k - old_k
         extra = (
             f"\n\n📈 Oxirgi davr: <code>{fmt_datetime(period_from_out)}</code> → "
             f"<code>{fmt_datetime(now)}</code>\n"
-            f"Hisoblagich: {old_k} → {new_k} kW (<b>+{new_k - old_k}</b> kW)"
+            f"Hisoblagich: {old_k} → {new_k} kW (<b>+{dkw}</b> kW)\n"
+            f"🔌 <b>Tok qarz</b> (yangi − eski): <b>{dkw}</b> kW"
         )
     await message.answer(
         "✅ Hisoblagich yangilandi." + extra,
+        parse_mode=ParseMode.HTML,
+        reply_markup=admin_main_menu(),
+    )
+
+
+@router.message(EditStoreStates.debt_subtract, F.text)
+async def edit_store_debt_subtract_commit(message: Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+    raw_amt = parse_amount(message.text or "")
+    if raw_amt is None or raw_amt <= 0:
+        await message.answer("Faqat musbat butun son (masalan: <code>100000</code>).")
+        return
+    data = await state.get_data()
+    sid = data.get("edit_store_id")
+    if not isinstance(sid, int):
+        await state.clear()
+        await message.answer("Sessiya buzildi.", reply_markup=admin_main_menu())
+        return
+
+    now = datetime.now(TZ_TASHKENT)
+    async with async_session_maker() as session:
+        s = await session.get(Store, sid)
+        if not s:
+            await state.clear()
+            await message.answer("Magazin topilmadi.", reply_markup=admin_main_menu())
+            return
+        apply_rent_accrual_to_store(s, now)
+        debt_before = int(s.debt_balance or 0)
+        pay = min(raw_amt, debt_before)
+        if pay <= 0:
+            await session.commit()
+            await state.clear()
+            await message.answer(
+                "Qarz hozir <b>0</b>. Ayirish mumkin emas.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=admin_main_menu(),
+            )
+            return
+        new_debt = debt_before - pay
+        s.debt_balance = new_debt
+        session.add(
+            StoreDebtPayment(
+                store_id=sid,
+                amount=pay,
+                debt_after=new_debt,
+                created_by_telegram_id=message.from_user.id,
+            )
+        )
+        await session.commit()
+
+    await state.clear()
+    await message.answer(
+        f"✅ Qarzdan ayirildi: <b>{fmt_money(pay)}</b> so'm.\n"
+        f"Qoldiq: <b>{fmt_money(new_debt)}</b> so'm.",
         parse_mode=ParseMode.HTML,
         reply_markup=admin_main_menu(),
     )

@@ -1,19 +1,20 @@
-import asyncio
 from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state
-from aiogram.types import CallbackQuery, Message
-from sqlalchemy import func, select
+import html
 
-from bot.db.models import Store, User
+from aiogram.enums import ParseMode
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from sqlalchemy import desc, func, select
+
+from bot.db.models import Store, StoreDebtPayment, StoreElectricityLog, User
 from bot.db.session import async_session_maker
 from bot.filters import AdminFilter
 from bot.keyboards import (
     ADMIN_BTN_LIST,
-    ADMIN_BTN_MSG,
     ADMIN_BTN_NEW,
     ADMIN_BTN_REPORT,
     BTN_CANCEL,
@@ -21,7 +22,8 @@ from bot.keyboards import (
     cancel_keyboard,
     store_date_keyboard,
 )
-from bot.states import AddStoreStates, BroadcastStates
+from bot.states import AddStoreStates
+from bot.utils.store_invite import new_invite_start_arg, telegram_me_link
 from bot.utils.store_flow import (
     fmt_money,
     fmt_store_date,
@@ -181,19 +183,40 @@ async def add_store_kw_finish(message: Message, state: FSMContext) -> None:
 
     store_date = datetime.fromisoformat(store_date_raw)
 
+    m = int(monthly_amount)
+    invite_arg = new_invite_start_arg()
     async with async_session_maker() as session:
-        session.add(
-            Store(
-                name=name,
-                owner_phone=owner_phone,
-                address=address,
-                store_date=store_date,
-                monthly_amount=int(monthly_amount),
-                electricity_kw=kw,
-                created_by_telegram_id=message.from_user.id,
-            )
+        st = Store(
+            name=name,
+            owner_phone=owner_phone,
+            address=address,
+            store_date=store_date,
+            monthly_amount=m,
+            electricity_kw=kw,
+            debt_balance=m,
+            rent_cycles_accrued=1,
+            owner_invite_token=invite_arg,
+            created_by_telegram_id=message.from_user.id,
         )
+        session.add(st)
         await session.commit()
+
+    me = await message.bot.get_me()
+    uname = (me.username or "").strip()
+    link_line = ""
+    if uname:
+        link = telegram_me_link(uname, invite_arg)
+        link_line = (
+            f"\n\n🔗 <b>Magazin egasiga havola</b> (nusxa olib yuboring):\n"
+            f'<a href="{html.escape(link)}">{html.escape(link)}</a>\n\n'
+            "Egachi havolani bosganda bot ochiladi va kontakt ulashadi — "
+            "yuborilgan raqam admin kiritgan telefon bilan mos bo'lishi kerak."
+        )
+    else:
+        link_line = (
+            f"\n\n🔗 Botda @username yo'q — havola yaratilmadi. "
+            f"Egachi qo'lda yuborsin: <code>/start {html.escape(invite_arg)}</code>"
+        )
 
     await state.clear()
     await message.answer(
@@ -203,102 +226,73 @@ async def add_store_kw_finish(message: Message, state: FSMContext) -> None:
         f"📍 {address}\n"
         f"📅 {fmt_store_date(store_date)}\n"
         f"💰 Oylik: {fmt_money(int(monthly_amount))} so'm\n"
-        f"⚡ Elektr: {kw} kW",
+        f"⚡ Elektr: {kw} kW"
+        + link_line,
+        parse_mode=ParseMode.HTML,
         reply_markup=admin_main_menu(),
     )
 
 
 @router.message(StateFilter(default_state), F.text == ADMIN_BTN_REPORT)
 async def report(message: Message) -> None:
+    from bot.utils.excel_stores import admin_report_xlsx_bytes
+    from bot.utils.rent_accrual import refresh_all_store_rent_state
+
+    await refresh_all_store_rent_state()
     async with async_session_maker() as session:
         stores = await session.scalar(select(func.count()).select_from(Store))
         users = await session.scalar(select(func.count()).select_from(User))
         with_phone = await session.scalar(
             select(func.count()).select_from(User).where(User.phone_number.isnot(None))
         )
+        store_rows = list(
+            (await session.execute(select(Store).order_by(Store.id.desc()))).scalars().all()
+        )
+        pay_result = await session.execute(
+            select(
+                StoreDebtPayment.id,
+                StoreDebtPayment.store_id,
+                Store.name,
+                StoreDebtPayment.amount,
+                StoreDebtPayment.debt_after,
+                StoreDebtPayment.created_at,
+                StoreDebtPayment.created_by_telegram_id,
+            )
+            .join(Store, Store.id == StoreDebtPayment.store_id)
+            .order_by(desc(StoreDebtPayment.id))
+            .limit(8000)
+        )
+        pay_rows = [tuple(row) for row in pay_result.all()]
+
+        elec_result = await session.execute(
+            select(
+                StoreElectricityLog.id,
+                StoreElectricityLog.store_id,
+                Store.name,
+                StoreElectricityLog.period_from,
+                StoreElectricityLog.period_to,
+                StoreElectricityLog.reading_before,
+                StoreElectricityLog.reading_after,
+                StoreElectricityLog.delta_kw,
+                StoreElectricityLog.created_at,
+            )
+            .join(Store, Store.id == StoreElectricityLog.store_id)
+            .order_by(desc(StoreElectricityLog.id))
+            .limit(8000)
+        )
+        elec_rows = [tuple(row) for row in elec_result.all()]
 
     text = (
         "📈 Hisobot\n\n"
         f"Magazinlar: {stores or 0}\n"
         f"Foydalanuvchilar (jami): {users or 0}\n"
-        f"Kontakt ulaganlar: {with_phone or 0}"
+        f"Kontakt ulaganlar: {with_phone or 0}\n\n"
+        "Excel: <b>Magazinlar</b> (tok qarz kW), "
+        "<b>Qarzdan ayirishlar</b>, <b>Tok tarixi</b>."
     )
-    await message.answer(text)
-
-
-@router.message(StateFilter(default_state), F.text == ADMIN_BTN_MSG)
-async def messages_menu(message: Message, state: FSMContext) -> None:
-    async with async_session_maker() as session:
-        with_phone = await session.scalar(
-            select(func.count()).select_from(User).where(User.phone_number.isnot(None))
-        )
-    await state.set_state(BroadcastStates.text)
-    await message.answer(
-        f"✉️ Xabarlar\n\n"
-        f"Kontakt ulagan foydalanuvchilar: {with_phone or 0}\n\n"
-        "Barcha ulangan foydalanuvchilarga yuboriladigan matnni yozing "
-        "(bekor uchun tugmani bosing):",
-        reply_markup=cancel_keyboard(),
-    )
-
-
-@router.message(BroadcastStates.text, F.text == BTN_CANCEL)
-async def broadcast_cancel(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await message.answer("Bekor qilindi.", reply_markup=admin_main_menu())
-
-
-@router.message(BroadcastStates.text, F.text)
-async def broadcast_send(message: Message, state: FSMContext) -> None:
-    text = (message.text or "").strip()
-    if not text:
-        await message.answer("Matn bo'sh bo'lmasin.")
-        return
-
-    # Xabarlar rejimida pastki menyudagi tugmalar "matn" deb tutilib qolmasin
-    if text in (
-        ADMIN_BTN_LIST,
-        ADMIN_BTN_NEW,
-        ADMIN_BTN_REPORT,
-        ADMIN_BTN_MSG,
-    ):
-        await state.clear()
-        if text == ADMIN_BTN_LIST:
-            from bot.handlers.admin_stores import admin_list_stores
-
-            await admin_list_stores(message)
-            return
-        if text == ADMIN_BTN_NEW:
-            await add_store_begin(message, state)
-            return
-        if text == ADMIN_BTN_REPORT:
-            await report(message)
-            return
-        await messages_menu(message, state)
-        return
-
-    async with async_session_maker() as session:
-        result = await session.execute(
-            select(User.telegram_id).where(User.phone_number.isnot(None))
-        )
-        ids = [r[0] for r in result.all()]
-
-    await state.clear()
-    await message.answer(
-        f"Yuborilmoqda: {len(ids)} ta foydalanuvchi...",
-        reply_markup=admin_main_menu(),
-    )
-
-    ok, fail = 0, 0
-    for uid in ids:
-        try:
-            await message.bot.send_message(uid, text)
-            ok += 1
-            await asyncio.sleep(0.04)
-        except Exception:
-            fail += 1
-
-    await message.answer(
-        f"Tugadi.\nMuvaffaqiyatli: {ok}\nYuborilmadi: {fail}",
-        reply_markup=admin_main_menu(),
+    await message.answer(text, parse_mode=ParseMode.HTML)
+    xlsx = admin_report_xlsx_bytes(store_rows, pay_rows, elec_rows)
+    await message.answer_document(
+        BufferedInputFile(xlsx, filename="magazinlar_hisoboti.xlsx"),
+        caption="📊 Magazinlar + qarz + tok tarixi (kW)",
     )

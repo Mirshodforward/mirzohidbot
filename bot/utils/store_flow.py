@@ -24,6 +24,12 @@ def tashkent_today_start() -> datetime:
     return datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=TZ_TASHKENT)
 
 
+def tashkent_day_start(dt: datetime) -> datetime:
+    """Berilgan vaqtni Asia/Toshkent bo'yicha shu kun 00:00 ga tushiradi."""
+    d = dt.astimezone(TZ_TASHKENT) if dt.tzinfo else dt.replace(tzinfo=TZ_TASHKENT)
+    return datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=TZ_TASHKENT)
+
+
 def fmt_store_date(dt: datetime | None) -> str:
     if not dt:
         return "—"
@@ -36,18 +42,53 @@ def fmt_money(n: int | None) -> str:
     return f"{n:,}".replace(",", " ")
 
 
-def next_rent_payment_dt(store_date: datetime | None) -> datetime | None:
-    """store_date dan boshlab har 30 kun — hozirdan keyingi birinchi to'lov sanasi."""
+def next_rent_payment_dt_at(store_date: datetime | None, at: datetime) -> datetime | None:
+    """store_date + 30k panjarasi bo'yicha <at> paytdan keyingi birinchi to'lov sanasi (strictly after at)."""
     if not store_date:
         return None
     tz = TZ_TASHKENT
     a = store_date.astimezone(tz) if store_date.tzinfo else store_date.replace(tzinfo=tz)
-    now = datetime.now(tz)
+    at_tz = at.astimezone(tz) if at.tzinfo else at.replace(tzinfo=tz)
     for k in range(5000):
         due = a + timedelta(days=30 * k)
-        if due > now:
+        if due > at_tz:
             return due
     return None
+
+
+def next_rent_payment_dt(store_date: datetime | None) -> datetime | None:
+    """store_date dan boshlab har 30 kun — hozirdan keyingi birinchi to'lov sanasi."""
+    return next_rent_payment_dt_at(store_date, datetime.now(TZ_TASHKENT))
+
+
+def rent_reminder_eligible(
+    store_date: datetime | None, now_tz: datetime, debt: int
+) -> tuple[bool, datetime | None, str]:
+    """(eslatma kerakmi, ko'rsatish sanasi, matn rejimi).
+
+    * ``approaching`` — ``due_shown`` (keyingi muddat) gacha 3 kunlik oyna, kunlik.
+    * ``overdue_soft`` — muddat o'tgan / navbatdagi muddatgacha, kunlik (``due_shown`` = keyingi).
+    """
+    if debt <= 0 or not store_date:
+        return False, None, ""
+    tz = TZ_TASHKENT
+    now_tz = now_tz.astimezone(tz) if now_tz.tzinfo else now_tz.replace(tzinfo=tz)
+    a = store_date.astimezone(tz) if store_date.tzinfo else store_date.replace(tzinfo=tz)
+    nd: datetime | None = None
+    for k in range(5000):
+        d = a + timedelta(days=30 * k)
+        if d > now_tz:
+            nd = d
+            break
+    if not nd:
+        return False, None, ""
+    start = nd - timedelta(days=3)
+    prev = nd - timedelta(days=30)
+    if now_tz >= start and now_tz < nd:
+        return True, nd, "approaching"
+    if now_tz >= prev and not (now_tz >= start and now_tz < nd):
+        return True, nd, "overdue_soft"
+    return False, None, ""
 
 
 def fmt_next_payment(store_date: datetime | None) -> str:

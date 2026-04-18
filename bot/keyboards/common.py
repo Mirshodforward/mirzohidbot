@@ -15,6 +15,23 @@ ADMIN_BTN_LIST = "Magazin ro'yxati🗒"
 ADMIN_BTN_REPORT = "Magazinlar xisoboti📈"
 ADMIN_BTN_MSG = "Xabarlar✉️"
 
+MSG_BROADCAST_ALL = "📢 Barchaga yuborish"
+MSG_TO_ONE_STORE = "🏪 Magazinga yuborish"
+MSG_MENU_BACK = "⬅️ Asosiy menyuga"
+
+
+def msg_mode_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text=MSG_BROADCAST_ALL),
+                KeyboardButton(text=MSG_TO_ONE_STORE),
+            ],
+            [KeyboardButton(text=MSG_MENU_BACK)],
+        ],
+        resize_keyboard=True,
+    )
+
 
 def contact_request_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -69,11 +86,11 @@ def store_date_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📅 Avto (Toshkent)",
+                    text="📅 Bugungi sana",
                     callback_data="store:date:auto",
                 ),
                 InlineKeyboardButton(
-                    text="✏️ Qo'lda",
+                    text="✏️ Qo'lda kiritish",
                     callback_data="store:date:manual",
                 ),
             ],

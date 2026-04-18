@@ -3,7 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from bot.config import get_settings
 from bot.db.base import Base
-from bot.db.models import Store, StoreElectricityLog, User  # noqa: F401 — metadata.create_all
+from bot.db.models import (  # noqa: F401 — metadata.create_all
+    Store,
+    StoreChatMessage,
+    StoreDebtPayment,
+    StoreElectricityLog,
+    User,
+)
 
 settings = get_settings()
 engine = create_async_engine(
@@ -23,6 +29,11 @@ _STORE_ALTER = [
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS store_date TIMESTAMPTZ",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS monthly_amount BIGINT",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS electricity_kw INTEGER",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS debt_balance BIGINT NOT NULL DEFAULT 0",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS rent_cycles_accrued INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS rent_reminder_sent_for TIMESTAMPTZ",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS debt_tok INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS owner_invite_token VARCHAR(64)",
 ]
 
 
