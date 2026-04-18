@@ -7,7 +7,10 @@ from bot.db.models import Store
 from bot.utils.store_flow import TZ_TASHKENT, fmt_store_date
 
 
-def stores_to_xlsx_bytes(stores: list[Store]) -> bytes:
+def stores_to_xlsx_bytes(
+    stores: list[Store],
+    global_tok_price_per_kw: int | None = None,
+) -> bytes:
     wb = Workbook()
     ws = wb.active
     assert ws is not None
@@ -23,6 +26,8 @@ def stores_to_xlsx_bytes(stores: list[Store]) -> bytes:
             "Qarz (so'm)",
             "Tok kW (joriy)",
             "Tok qarz / oxirgi +kW",
+            "Umumiy tok narxi (so'm/kW)",
+            "Tok to'lov (so'm)",
             "Yaratilgan",
         ]
     )
@@ -30,6 +35,9 @@ def stores_to_xlsx_bytes(stores: list[Store]) -> bytes:
         created = "—"
         if s.created_at:
             created = s.created_at.astimezone(TZ_TASHKENT).strftime("%d.%m.%Y %H:%M")
+        tok_pay = ""
+        if global_tok_price_per_kw is not None:
+            tok_pay = int(s.debt_tok or 0) * int(global_tok_price_per_kw)
         ws.append(
             [
                 s.id,
@@ -41,6 +49,8 @@ def stores_to_xlsx_bytes(stores: list[Store]) -> bytes:
                 int(s.debt_balance or 0),
                 s.electricity_kw if s.electricity_kw is not None else "",
                 int(s.debt_tok or 0),
+                int(global_tok_price_per_kw) if global_tok_price_per_kw is not None else "",
+                tok_pay,
                 created,
             ]
         )
@@ -64,6 +74,7 @@ def admin_report_xlsx_bytes(
     electricity_rows: list[
         tuple[int, int, str, datetime, datetime, int, int, int, datetime]
     ],  # log_id, sid, name, p_from, p_to, rb, ra, delta, created_at
+    global_tok_price_per_kw: int | None = None,
 ) -> bytes:
     """Bitta fayl: magazinlar + qarzdan ayirishlar + tok tarixi (kW)."""
     wb = Workbook()
@@ -81,6 +92,8 @@ def admin_report_xlsx_bytes(
             "Qarz (so'm)",
             "Tok kW (joriy)",
             "Tok qarz / oxirgi +kW",
+            "Umumiy tok narxi (so'm/kW)",
+            "Tok to'lov (so'm)",
             "Yaratilgan",
         ]
     )
@@ -88,6 +101,9 @@ def admin_report_xlsx_bytes(
         created = "—"
         if s.created_at:
             created = s.created_at.astimezone(TZ_TASHKENT).strftime("%d.%m.%Y %H:%M")
+        tok_pay = ""
+        if global_tok_price_per_kw is not None:
+            tok_pay = int(s.debt_tok or 0) * int(global_tok_price_per_kw)
         ws1.append(
             [
                 s.id,
@@ -99,6 +115,8 @@ def admin_report_xlsx_bytes(
                 int(s.debt_balance or 0),
                 s.electricity_kw if s.electricity_kw is not None else "",
                 int(s.debt_tok or 0),
+                int(global_tok_price_per_kw) if global_tok_price_per_kw is not None else "",
+                tok_pay,
                 created,
             ]
         )

@@ -13,16 +13,18 @@ from sqlalchemy import desc, func, select
 from bot.db.models import Store, StoreDebtPayment, StoreElectricityLog, User
 from bot.db.session import async_session_maker
 from bot.filters import AdminFilter
+from bot.db.global_tok_price import get_electricity_price_per_kw, set_electricity_price_per_kw
 from bot.keyboards import (
     ADMIN_BTN_LIST,
     ADMIN_BTN_NEW,
     ADMIN_BTN_REPORT,
+    ADMIN_BTN_TOK_PRICE,
     BTN_CANCEL,
     admin_main_menu,
     cancel_keyboard,
     store_date_keyboard,
 )
-from bot.states import AddStoreStates
+from bot.states import AddStoreStates, AdminTokPriceStates
 from bot.utils.store_invite import new_invite_start_arg, telegram_me_link
 from bot.utils.store_flow import (
     fmt_money,
@@ -37,6 +39,46 @@ from bot.utils.store_flow import (
 router = Router(name="admin")
 router.message.filter(AdminFilter())
 router.callback_query.filter(AdminFilter())
+
+
+@router.message(StateFilter(default_state), F.text == ADMIN_BTN_TOK_PRICE)
+async def admin_tok_price_begin(message: Message, state: FSMContext) -> None:
+    cur = await get_electricity_price_per_kw()
+    if cur is not None:
+        head = f"Hozirgi <b>umumiy</b> tok narxi: <b>{fmt_money(cur)}</b> so'm / kW.\n\n"
+    else:
+        head = "Hozircha umumiy tok narxi kiritilmagan.\n\n"
+    await state.set_state(AdminTokPriceStates.amount)
+    await message.answer(
+        head
+        + "Barcha magazinlar uchun bitta kW narxidagi summani yozing "
+        "(so'm, butun son, masalan <code>1000</code>).\n"
+        "<code>0</code> — tok pullik deb hisoblanmaydi.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(AdminTokPriceStates.amount, F.text == BTN_CANCEL)
+async def admin_tok_price_cancel(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Bekor qilindi.", reply_markup=admin_main_menu())
+
+
+@router.message(AdminTokPriceStates.amount, F.text)
+async def admin_tok_price_commit(message: Message, state: FSMContext) -> None:
+    amount = parse_amount(message.text or "")
+    if amount is None:
+        await message.answer("Faqat butun son (masalan: <code>1000</code> yoki <code>0</code>).")
+        return
+    await set_electricity_price_per_kw(amount)
+    await state.clear()
+    await message.answer(
+        f"✅ Umumiy tok narxi yangilandi: <b>{fmt_money(amount)}</b> so'm / kW. "
+        "Bu narx barcha magazinlar uchun qo'llaniladi.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=admin_main_menu(),
+    )
 
 
 @router.message(StateFilter(default_state), F.text == ADMIN_BTN_NEW)
@@ -291,7 +333,8 @@ async def report(message: Message) -> None:
         "<b>Qarzdan ayirishlar</b>, <b>Tok tarixi</b>."
     )
     await message.answer(text, parse_mode=ParseMode.HTML)
-    xlsx = admin_report_xlsx_bytes(store_rows, pay_rows, elec_rows)
+    global_tok = await get_electricity_price_per_kw()
+    xlsx = admin_report_xlsx_bytes(store_rows, pay_rows, elec_rows, global_tok)
     await message.answer_document(
         BufferedInputFile(xlsx, filename="magazinlar_hisoboti.xlsx"),
         caption="📊 Magazinlar + qarz + tok tarixi (kW)",

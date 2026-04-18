@@ -6,6 +6,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from bot.db.base import Base
 
 
+class AppSettings(Base):
+    """Bot bo'yicha umumiy sozlamalar (bitta qator, id=1)."""
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer(), primary_key=True)
+    # Barcha magazinlar uchun: 1 kW uchun so'm (admin belgilaydi)
+    electricity_price_per_kw: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+
+
 class User(Base):
     __tablename__ = "users"
 

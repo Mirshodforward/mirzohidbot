@@ -17,6 +17,7 @@ from aiogram.types import (
 )
 from sqlalchemy import desc, select
 
+from bot.db.global_tok_price import get_electricity_price_per_kw
 from bot.db.models import Store, StoreDebtPayment, StoreElectricityLog
 from bot.db.session import async_session_maker
 from bot.filters import AdminFilter
@@ -129,11 +130,15 @@ def _store_detail_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
                 ],
                 [
                     InlineKeyboardButton(text="Yangi schotchik raqami kiritish", callback_data=f"as:{sid}:kw:{m}"),
-                    InlineKeyboardButton (text="➖ Ayirish (to'lov)",callback_data=f"as:{sid}:pd:{m}",),
+                    InlineKeyboardButton(
+                        text="➖ Ayirish (to'lov)",
+                        callback_data=f"as:{sid}:pd:{m}",
+                    ),
                 ],
                 [
                     InlineKeyboardButton(
-                       text="📜 Tarixni ko'rish", callback_data=f"as:{sid}:lg:{m}"
+                        text="📜 Tarixni ko'rish",
+                        callback_data=f"as:{sid}:lg:{m}",
                     ),
                 ],
                 [
@@ -204,9 +209,10 @@ def _history_reports_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
     )
 
 
-def _admin_store_text(s: Store) -> str:
+async def _admin_store_text(s: Store) -> str:
+    p = await get_electricity_price_per_kw()
     return (
-        store_card_html(s, show_payment=True)
+        store_card_html(s, show_payment=True, tok_price_per_kw=p)
         + "\n\n<i>Telefon raqam tahrirda o'zgartirilmaydi.</i>"
     )
 
@@ -232,7 +238,8 @@ async def admin_list_stores(message: Message) -> None:
         await message.answer("Hozircha magazinlar yo'q.")
         return
 
-    xlsx = stores_to_xlsx_bytes(stores)
+    global_tok = await get_electricity_price_per_kw()
+    xlsx = stores_to_xlsx_bytes(stores, global_tok)
     await message.answer_document(
         BufferedInputFile(xlsx, filename="magazinlar.xlsx"),
         caption=(
@@ -295,7 +302,7 @@ async def cb_log_back_to_store(callback: CallbackQuery, state: FSMContext) -> No
     if not s or not callback.message:
         return
     await callback.message.edit_text(
-        _admin_store_text(s),
+        await _admin_store_text(s),
         parse_mode=ParseMode.HTML,
         reply_markup=_store_detail_kb(sid, list_mid),
     )
@@ -422,7 +429,7 @@ async def _cancel_delete_confirm(
         await callback.answer()
         return
     await callback.message.edit_text(
-        _admin_store_text(s),
+        await _admin_store_text(s),
         parse_mode=ParseMode.HTML,
         reply_markup=_store_detail_kb(sid, list_mid),
     )
@@ -486,7 +493,7 @@ async def _store_open(callback: CallbackQuery, state: FSMContext, sid: int) -> N
     if callback.message and callback.message.document:
         list_mid = callback.message.message_id
         await callback.message.answer(
-            _admin_store_text(s),
+            await _admin_store_text(s),
             parse_mode=ParseMode.HTML,
             reply_markup=_store_detail_kb(sid, list_mid),
         )
@@ -495,7 +502,7 @@ async def _store_open(callback: CallbackQuery, state: FSMContext, sid: int) -> N
 
     if callback.message:
         await callback.message.edit_text(
-            _admin_store_text(s),
+            await _admin_store_text(s),
             parse_mode=ParseMode.HTML,
             reply_markup=_store_detail_kb(sid, None),
         )
@@ -614,7 +621,7 @@ async def _store_sub(
             "egasi bergan pul miqdori.\n\n"
             f"Hozirgi qarz: <b>{fmt_money(debt)}</b> so'm"
         )
-    else:  # kw
+    elif sub == "kw":
         await state.set_state(EditStoreStates.kw)
         cur = s.electricity_kw
         prompt = (
@@ -622,6 +629,9 @@ async def _store_sub(
             f"Hozirgi qiymat: <code>{cur if cur is not None else '—'}</code>\n\n"
             "Yangi qiymat avvalgisidan kichik bo'lmasin (hisoblagich orqaga qaytmaydi)."
         )
+    else:
+        await callback.answer("Noto'g'ri")
+        return
 
     uid = callback.from_user.id if callback.from_user else None
     if callback.message and uid:
@@ -715,6 +725,7 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
     now = datetime.now(TZ_TASHKENT)
     old_k: int | None = None
     period_from_out: datetime | None = None
+    price_for_msg = await get_electricity_price_per_kw()
     async with async_session_maker() as session:
         s = await session.get(Store, sid)
         if not s:
@@ -770,6 +781,11 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
             f"Hisoblagich: {old_k} → {new_k} kW (<b>+{dkw}</b> kW)\n"
             f"🔌 <b>Tok qarz</b> (yangi − eski): <b>{dkw}</b> kW"
         )
+        if price_for_msg is not None:
+            extra += (
+                f"\n💡 Tok uchun to'lash: <b>{fmt_money(dkw * price_for_msg)}</b> so'm "
+                f"({fmt_money(price_for_msg)} × {dkw} kW)"
+            )
     await message.answer(
         "✅ Hisoblagich yangilandi." + extra,
         parse_mode=ParseMode.HTML,

@@ -38,3 +38,9 @@ class EditStoreStates(StatesGroup):
     monthly = State()
     kw = State()
     debt_subtract = State()
+
+
+class AdminTokPriceStates(StatesGroup):
+    """Umumiy tok narxi (barcha magazinlar uchun)."""
+
+    amount = State()

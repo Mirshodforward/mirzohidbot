@@ -14,6 +14,7 @@ ADMIN_BTN_NEW = "Yangi magazin ➕"
 ADMIN_BTN_LIST = "Magazin ro'yxati🗒"
 ADMIN_BTN_REPORT = "Magazinlar xisoboti📈"
 ADMIN_BTN_MSG = "Xabarlar✉️"
+ADMIN_BTN_TOK_PRICE = "💵 Tok narxi (hamma uchun)"
 
 MSG_BROADCAST_ALL = "📢 Barchaga yuborish"
 MSG_TO_ONE_STORE = "🏪 Magazinga yuborish"
@@ -53,6 +54,7 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
                 KeyboardButton(text=ADMIN_BTN_REPORT),
                 KeyboardButton(text=ADMIN_BTN_MSG),
             ],
+            [KeyboardButton(text=ADMIN_BTN_TOK_PRICE)],
         ],
         resize_keyboard=True,
     )

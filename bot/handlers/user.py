@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
 
 from bot.config import get_settings, is_admin
+from bot.db.global_tok_price import get_electricity_price_per_kw
 from bot.db.models import Store, StoreChatMessage, User
 from bot.db.session import async_session_maker
 from bot.keyboards import (
@@ -107,9 +108,10 @@ async def on_contact_invite_link(message: Message, state: FSMContext) -> None:
     head = "✅ Magazingiz botga ulandi!"
     if stores:
         head += "\n\n🏪 <b>Sizning magazingiz</b>"
+    tok_p = await get_electricity_price_per_kw()
     cur = head
     for s in stores:
-        block = "\n\n" + store_card_html(s, show_payment=True)
+        block = "\n\n" + store_card_html(s, show_payment=True, tok_price_per_kw=tok_p)
         if len(cur) + len(block) > 3800:
             parts.append(cur)
             cur = block.lstrip("\n")
@@ -199,9 +201,10 @@ async def on_contact(message: Message) -> None:
     head = "Rahmat! Ma'lumotlaringiz qabul qilindi."
     if stores:
         head += "\n\n🏪 <b>Sizning magazingiz</b>"
+    tok_p = await get_electricity_price_per_kw()
     cur = head
     for s in stores:
-        block = "\n\n" + store_card_html(s, show_payment=True)
+        block = "\n\n" + store_card_html(s, show_payment=True, tok_price_per_kw=tok_p)
         if len(cur) + len(block) > 3800:
             parts.append(cur)
             cur = block.lstrip("\n")
@@ -231,8 +234,9 @@ async def user_my_stores(message: Message) -> None:
         return
     parts: list[str] = []
     cur = "🏪 <b>Mening magazinlarim</b>"
+    tok_p = await get_electricity_price_per_kw()
     for s in stores:
-        block = "\n\n" + store_card_html(s, show_payment=True)
+        block = "\n\n" + store_card_html(s, show_payment=True, tok_price_per_kw=tok_p)
         if len(cur) + len(block) > 3800:
             parts.append(cur)
             cur = block.lstrip("\n")
