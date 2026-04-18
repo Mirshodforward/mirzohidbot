@@ -27,7 +27,11 @@ from bot.keyboards import (
     cancel_keyboard,
 )
 from bot.states import EditStoreStates
-from bot.utils.excel_stores import stores_to_xlsx_bytes
+from bot.utils.excel_stores import (
+    single_store_debt_payments_excel_bytes,
+    single_store_electricity_excel_bytes,
+    stores_to_xlsx_bytes,
+)
 from bot.utils.rent_accrual import apply_rent_accrual_to_store
 from bot.utils.store_flow import TZ_TASHKENT, fmt_datetime, fmt_money, parse_amount, parse_kw
 from bot.utils.store_format import store_card_html
@@ -37,7 +41,7 @@ router.message.filter(AdminFilter())
 router.callback_query.filter(AdminFilter())
 
 PER_PAGE = 10
-SUBACTIONS = frozenset({"nm", "mo", "kw", "lg", "pd"})
+SUBACTIONS = frozenset({"nm", "mo", "kw", "lg", "pd", "xt", "xp"})
 
 
 async def _get_store_refreshed(sid: int) -> Store | None:
@@ -120,17 +124,16 @@ def _store_detail_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="✏️ Nomi", callback_data=f"as:{sid}:nm:{m}"),
-                    InlineKeyboardButton(text="💰 Oylik", callback_data=f"as:{sid}:mo:{m}"),
+                    InlineKeyboardButton(text="✏️ Nomini o'zgartrish", callback_data=f"as:{sid}:nm:{m}"),
+                    InlineKeyboardButton(text="💰 Oylik summani o'zgartrish", callback_data=f"as:{sid}:mo:{m}"),
                 ],
                 [
-                    InlineKeyboardButton(text="⚡ Tok", callback_data=f"as:{sid}:kw:{m}"),
-                    InlineKeyboardButton(text="📜 Tarix", callback_data=f"as:{sid}:lg:{m}"),
+                    InlineKeyboardButton(text="Yangi schotchik raqami kiritish", callback_data=f"as:{sid}:kw:{m}"),
+                    InlineKeyboardButton (text="➖ Ayirish (to'lov)",callback_data=f"as:{sid}:pd:{m}",),
                 ],
                 [
                     InlineKeyboardButton(
-                        text="➖ Ayirish (to'lov)",
-                        callback_data=f"as:{sid}:pd:{m}",
+                       text="📜 Tarixni ko'rish", callback_data=f"as:{sid}:lg:{m}"
                     ),
                 ],
                 [
@@ -145,29 +148,57 @@ def _store_detail_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✏️ Nomi", callback_data=f"as:{sid}:nm"),
-                InlineKeyboardButton(text="💰 Oylik", callback_data=f"as:{sid}:mo"),
+                InlineKeyboardButton(text="✏️ Nomini o'zgartrish", callback_data=f"as:{sid}:nm"),
+                InlineKeyboardButton(text="💰 Oylik summani o'zgartrish", callback_data=f"as:{sid}:mo"),
             ],
             [
-                InlineKeyboardButton(text="⚡ Tok", callback_data=f"as:{sid}:kw"),
-                InlineKeyboardButton(text="📜 Tarix", callback_data=f"as:{sid}:lg"),
+                InlineKeyboardButton(text="Yangi schotchik raqami kiritish", callback_data=f"as:{sid}:kw"),
+                InlineKeyboardButton(
+                    text="➖ Ayirish (to'lov)",
+                    callback_data=f"as:{sid}:pd",
+                ),
             ],
-            [InlineKeyboardButton(text="➖ Ayirish (to'lov)", callback_data=f"as:{sid}:pd")],
-            [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"as:{sid}:del")],
+            [
+                InlineKeyboardButton(
+                    text="📜 Tarixni ko'rish",
+                    callback_data=f"as:{sid}:lg",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 O'chirish",
+                    callback_data=f"as:{sid}:del",
+                ),
+            ],
             [InlineKeyboardButton(text="⬅️ Ro'yxat", callback_data="lp:0")],
         ]
     )
 
 
-def _log_back_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
+def _history_reports_kb(sid: int, list_mid: int | None) -> InlineKeyboardMarkup:
     if list_mid is not None:
+        m = str(list_mid)
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Magazinga", callback_data=f"b:{sid}:{list_mid}")],
+                [
+                    InlineKeyboardButton(
+                        text="📊 Tok (Excel)",
+                        callback_data=f"as:{sid}:xt:{m}",
+                    ),
+                    InlineKeyboardButton(
+                        text="📊 To'lovlar (Excel)",
+                        callback_data=f"as:{sid}:xp:{m}",
+                    ),
+                ],
+                [InlineKeyboardButton(text="⬅️ Magazinga", callback_data=f"b:{sid}:{m}")],
             ]
         )
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📊 Tok (Excel)", callback_data=f"as:{sid}:xt"),
+                InlineKeyboardButton(text="📊 To'lovlar (Excel)", callback_data=f"as:{sid}:xp"),
+            ],
             [InlineKeyboardButton(text="⬅️ Magazinga", callback_data=f"as:{sid}")],
         ]
     )
@@ -478,14 +509,30 @@ async def _store_sub(
     sub: str,
     list_mid: int | None = None,
 ) -> None:
-    await callback.answer()
     s = await _get_store_refreshed(sid)
     if not s:
         if callback.message:
             await callback.message.edit_text("Magazin topilmadi.")
+        await callback.answer()
         return
 
     if sub == "lg":
+        body = (
+            "📜 <b>Tarix va hisobotlar</b>\n\n"
+            "Tok o'qimlari va qarzdan ayirishlar (to'lovlar) alohida Excel fayllarda.\n"
+            "Kerakli tugmani tanlang yoki magazinga qayting."
+        )
+        if callback.message:
+            await callback.message.edit_text(
+                body,
+                parse_mode=ParseMode.HTML,
+                reply_markup=_history_reports_kb(sid, list_mid),
+            )
+        await callback.answer()
+        return
+
+    if sub == "xt":
+        nm = (s.name or "magazin").strip()
         async with async_session_maker() as session:
             logs = (
                 (
@@ -493,29 +540,63 @@ async def _store_sub(
                         select(StoreElectricityLog)
                         .where(StoreElectricityLog.store_id == sid)
                         .order_by(desc(StoreElectricityLog.id))
-                        .limit(40)
+                        .limit(8000)
                     )
                 )
                 .scalars()
                 .all()
             )
-        if not logs:
-            body = "📜 <b>Tok tarixi</b>\n\nHozircha yozuvlar yo'q (yangi o'qim kiritilganda shu yerda ko'rinadi)."
-        else:
-            lines: list[str] = ["📜 <b>Tok iste'moli</b>\n"]
-            for lg in logs:
-                lines.append(
-                    f"\n{fmt_datetime(lg.period_from)} → {fmt_datetime(lg.period_to)}\n"
-                    f"{lg.reading_before} → {lg.reading_after} kW "
-                    f"(<b>+{lg.delta_kw}</b> kW)\n"
-                )
-            body = "".join(lines)
-        if callback.message:
-            await callback.message.edit_text(
-                body,
-                parse_mode=ParseMode.HTML,
-                reply_markup=_log_back_kb(sid, list_mid),
+        rows = [
+            (
+                lg.id,
+                lg.period_from,
+                lg.period_to,
+                lg.reading_before,
+                lg.reading_after,
+                lg.delta_kw,
+                lg.created_at,
             )
+            for lg in logs
+        ]
+        xlsx = single_store_electricity_excel_bytes(sid, nm, rows)
+        doc = BufferedInputFile(xlsx, filename=f"magazin_{sid}_tok_tarix.xlsx")
+        if callback.message and callback.bot:
+            await callback.message.answer_document(
+                document=doc,
+                caption=f"📊 Tok tarixi — #{sid} {html.escape(nm)}",
+                parse_mode=ParseMode.HTML,
+            )
+        await callback.answer("Tok tarixi Excel yuborildi.")
+        return
+
+    if sub == "xp":
+        nm = (s.name or "magazin").strip()
+        async with async_session_maker() as session:
+            pays = (
+                (
+                    await session.execute(
+                        select(StoreDebtPayment)
+                        .where(StoreDebtPayment.store_id == sid)
+                        .order_by(desc(StoreDebtPayment.id))
+                        .limit(8000)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        rows = [
+            (p.id, p.amount, p.debt_after, p.created_at, p.created_by_telegram_id)
+            for p in pays
+        ]
+        xlsx = single_store_debt_payments_excel_bytes(sid, nm, rows)
+        doc = BufferedInputFile(xlsx, filename=f"magazin_{sid}_tolovlar_tarix.xlsx")
+        if callback.message and callback.bot:
+            await callback.message.answer_document(
+                document=doc,
+                caption=f"📊 Qarzdan ayirishlar (to'lovlar) — #{sid} {html.escape(nm)}",
+                parse_mode=ParseMode.HTML,
+            )
+        await callback.answer("To'lovlar Excel yuborildi.")
         return
 
     await state.update_data(edit_store_id=sid)
@@ -551,6 +632,7 @@ async def _store_sub(
             parse_mode=ParseMode.HTML,
             reply_markup=cancel_keyboard(),
         )
+    await callback.answer()
 
 
 @router.message(EditStoreStates.name, F.text == BTN_CANCEL)

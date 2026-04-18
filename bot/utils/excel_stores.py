@@ -153,3 +153,87 @@ def admin_report_xlsx_bytes(
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
+
+
+def single_store_electricity_excel_bytes(
+    store_id: int,
+    store_name: str,
+    rows: list[
+        tuple[int, datetime, datetime, int, int, int, datetime]
+    ],  # id, p_from, p_to, rb, ra, delta, created_at
+) -> bytes:
+    """Bitta magazin — tok (kW) o'zgarishlari."""
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "Tok_tarixi"
+    ws.append(
+        [
+            "Magazin ID",
+            "Magazin",
+            "Yozuv ID",
+            "Davr boshlanishi",
+            "Davr tugashi",
+            "Eski ko'rsatkich (kW)",
+            "Yangi ko'rsatkich (kW)",
+            "Iste'mol (+kW)",
+            "Yozilgan vaqt",
+        ]
+    )
+    for lid, p_from, p_to, rb, ra, delta, created_at in rows:
+        ws.append(
+            [
+                store_id,
+                store_name,
+                lid,
+                _fmt_ts(p_from),
+                _fmt_ts(p_to),
+                rb,
+                ra,
+                delta,
+                _fmt_ts(created_at),
+            ]
+        )
+
+    bio = BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
+def single_store_debt_payments_excel_bytes(
+    store_id: int,
+    store_name: str,
+    rows: list[tuple[int, int, int, datetime, int]],  # id, amount, debt_after, created_at, admin_id
+) -> bytes:
+    """Bitta magazin — qarzdan ayirishlar (to'lovlar)."""
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "Tolovlar"
+    ws.append(
+        [
+            "Magazin ID",
+            "Magazin",
+            "Yozuv ID",
+            "Sana vaqt",
+            "Ayirilgan summa (so'm)",
+            "Qarzdan keyin (so'm)",
+            "Admin Telegram ID",
+        ]
+    )
+    for pid, amount, debt_after, created_at, admin_id in rows:
+        ws.append(
+            [
+                store_id,
+                store_name,
+                pid,
+                _fmt_ts(created_at),
+                amount,
+                debt_after,
+                admin_id,
+            ]
+        )
+
+    bio = BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
