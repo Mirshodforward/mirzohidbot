@@ -37,7 +37,9 @@ class EditStoreStates(StatesGroup):
     name = State()
     monthly = State()
     kw = State()
+    kw_confirm = State()
     debt_subtract = State()
+    debt_subtract_confirm = State()
 
 
 class AdminTokPriceStates(StatesGroup):

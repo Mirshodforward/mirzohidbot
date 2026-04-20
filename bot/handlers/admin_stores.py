@@ -217,6 +217,114 @@ async def _admin_store_text(s: Store) -> str:
     )
 
 
+def _kw_confirm_kb(sid: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"ackw:{sid}"),
+                InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"bckw:{sid}"),
+            ],
+        ]
+    )
+
+
+def _debt_confirm_kb(sid: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"ackp:{sid}"),
+                InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"bckp:{sid}"),
+            ],
+        ]
+    )
+
+
+async def _commit_kw_update(sid: int, new_k: int) -> tuple[str | None, dict | None]:
+    """Hisoblagichni DB ga yozadi. Xato bo'lsa (matn, None), muvaffaqiyatda (None, ma'lumot)."""
+    now = datetime.now(TZ_TASHKENT)
+    old_k: int | None = None
+    period_from_out: datetime | None = None
+    async with async_session_maker() as session:
+        s = await session.get(Store, sid)
+        if not s:
+            return ("Magazin topilmadi.", None)
+        old_k = s.electricity_kw
+        if old_k is not None:
+            if new_k < old_k:
+                return (
+                    "Yangi ko'rsatkich oldingisidan kichik bo'lmasin "
+                    "(hisoblagich orqaga qaytmaydi).",
+                    None,
+                )
+            last_to = await session.scalar(
+                select(StoreElectricityLog.period_to)
+                .where(StoreElectricityLog.store_id == sid)
+                .order_by(desc(StoreElectricityLog.id))
+                .limit(1)
+            )
+            period_from = last_to or s.created_at
+            if period_from is None:
+                period_from = now
+            elif period_from.tzinfo is None:
+                period_from = period_from.replace(tzinfo=TZ_TASHKENT)
+            else:
+                period_from = period_from.astimezone(TZ_TASHKENT)
+            period_from_out = period_from
+            delta = new_k - old_k
+            s.debt_tok = delta
+            session.add(
+                StoreElectricityLog(
+                    store_id=sid,
+                    period_from=period_from,
+                    period_to=now,
+                    reading_before=old_k,
+                    reading_after=new_k,
+                    delta_kw=delta,
+                )
+            )
+        else:
+            s.debt_tok = 0
+        s.electricity_kw = new_k
+        await session.commit()
+    return (
+        None,
+        {"old_k": old_k, "period_from_out": period_from_out, "now": now, "new_k": new_k},
+    )
+
+
+async def _commit_debt_subtract(
+    sid: int, raw_amt: int, admin_telegram_id: int
+) -> tuple[str | None, tuple[int, int] | None]:
+    """Qarzdan ayirishni saqlaydi. Xato (matn, None) yoki (None, (pay, new_debt))."""
+    now = datetime.now(TZ_TASHKENT)
+    async with async_session_maker() as session:
+        s = await session.get(Store, sid)
+        if not s:
+            return ("Magazin topilmadi.", None)
+        if apply_rent_accrual_to_store(s, now):
+            await session.commit()
+        s = await session.get(Store, sid)
+        if not s:
+            return ("Magazin topilmadi.", None)
+        debt_before = int(s.debt_balance or 0)
+        pay = min(raw_amt, debt_before)
+        if pay <= 0:
+            await session.commit()
+            return ("Qarz hozir <b>0</b>. Ayirish mumkin emas.", None)
+        new_debt = debt_before - pay
+        s.debt_balance = new_debt
+        session.add(
+            StoreDebtPayment(
+                store_id=sid,
+                amount=pay,
+                debt_after=new_debt,
+                created_by_telegram_id=admin_telegram_id,
+            )
+        )
+        await session.commit()
+    return (None, (pay, new_debt))
+
+
 async def _load_stores_ordered() -> list[Store]:
     now = datetime.now(TZ_TASHKENT)
     async with async_session_maker() as session:
@@ -648,7 +756,9 @@ async def _store_sub(
 @router.message(EditStoreStates.name, F.text == BTN_CANCEL)
 @router.message(EditStoreStates.monthly, F.text == BTN_CANCEL)
 @router.message(EditStoreStates.kw, F.text == BTN_CANCEL)
+@router.message(EditStoreStates.kw_confirm, F.text == BTN_CANCEL)
 @router.message(EditStoreStates.debt_subtract, F.text == BTN_CANCEL)
+@router.message(EditStoreStates.debt_subtract_confirm, F.text == BTN_CANCEL)
 async def edit_store_cancel(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("Bekor qilindi.", reply_markup=admin_main_menu())
@@ -722,10 +832,6 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
         await message.answer("Sessiya buzildi.", reply_markup=admin_main_menu())
         return
 
-    now = datetime.now(TZ_TASHKENT)
-    old_k: int | None = None
-    period_from_out: datetime | None = None
-    price_for_msg = await get_electricity_price_per_kw()
     async with async_session_maker() as session:
         s = await session.get(Store, sid)
         if not s:
@@ -733,45 +839,69 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
             await message.answer("Magazin topilmadi.", reply_markup=admin_main_menu())
             return
         old_k = s.electricity_kw
-        if old_k is not None:
-            if new_k < old_k:
-                await message.answer(
-                    "Yangi ko'rsatkich oldingisidan kichik bo'lmasin "
-                    "(hisoblagich orqaga qaytmaydi).",
-                )
-                return
-            last_to = await session.scalar(
-                select(StoreElectricityLog.period_to)
-                .where(StoreElectricityLog.store_id == sid)
-                .order_by(desc(StoreElectricityLog.id))
-                .limit(1)
+        if old_k is not None and new_k < old_k:
+            await message.answer(
+                "Yangi ko'rsatkich oldingisidan kichik bo'lmasin "
+                "(hisoblagich orqaga qaytmaydi).",
             )
-            period_from = last_to or s.created_at
-            if period_from is None:
-                period_from = now
-            elif period_from.tzinfo is None:
-                period_from = period_from.replace(tzinfo=TZ_TASHKENT)
-            else:
-                period_from = period_from.astimezone(TZ_TASHKENT)
-            period_from_out = period_from
-            delta = new_k - old_k
-            s.debt_tok = delta
-            session.add(
-                StoreElectricityLog(
-                    store_id=sid,
-                    period_from=period_from,
-                    period_to=now,
-                    reading_before=old_k,
-                    reading_after=new_k,
-                    delta_kw=delta,
-                )
-            )
-        else:
-            s.debt_tok = 0
-        s.electricity_kw = new_k
-        await session.commit()
+            return
+
+    lines = ["⚠️ <b>Hisoblagichni yangilashni tasdiqlaysizmi?</b>\n"]
+    if old_k is not None:
+        dkw = new_k - old_k
+        lines.append(
+            f"Eski: <code>{old_k}</code> → Yangi: <code>{new_k}</code> kW\n"
+            f"Tok (yangi − eski): <b>+{dkw}</b> kW"
+        )
+    else:
+        lines.append(f"Birinchi o'qim: <code>{new_k}</code> kW")
+
+    await state.update_data(pending_kw_new=new_k)
+    await state.set_state(EditStoreStates.kw_confirm)
+    await message.answer(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_kw_confirm_kb(sid),
+    )
+
+
+@router.message(EditStoreStates.kw_confirm, F.text != BTN_CANCEL, F.text)
+async def edit_store_kw_confirm_wrong_input(message: Message) -> None:
+    await message.answer(
+        "Iltimos, pastdagi tugmalardan <b>Tasdiqlash</b> yoki <b>Orqaga</b>ni bosing.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(
+    StateFilter(EditStoreStates.kw_confirm),
+    F.data.startswith("ackw:"),
+)
+async def cb_kw_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    parts = (callback.data or "").split(":")
+    if len(parts) != 2 or not parts[1].isdigit():
+        return
+    sid = int(parts[1])
+    data = await state.get_data()
+    if data.get("edit_store_id") != sid:
+        await callback.answer("Sessiya buzildi.", show_alert=True)
+        return
+    new_k = data.get("pending_kw_new")
+    if not isinstance(new_k, int):
+        await callback.answer("Sessiya buzildi.", show_alert=True)
+        return
+
+    err, info = await _commit_kw_update(sid, new_k)
+    if err:
+        await callback.answer(err, show_alert=True)
+        return
 
     await state.clear()
+    price_for_msg = await get_electricity_price_per_kw()
+    old_k = info["old_k"]
+    period_from_out = info["period_from_out"]
+    now = info["now"]
     extra = ""
     if old_k is not None and period_from_out is not None:
         dkw = new_k - old_k
@@ -786,11 +916,75 @@ async def edit_store_kw_commit(message: Message, state: FSMContext) -> None:
                 f"\n💡 Tok uchun to'lash: <b>{fmt_money(dkw * price_for_msg)}</b> so'm "
                 f"({fmt_money(price_for_msg)} × {dkw} kW)"
             )
-    await message.answer(
-        "✅ Hisoblagich yangilandi." + extra,
-        parse_mode=ParseMode.HTML,
-        reply_markup=admin_main_menu(),
+
+    uid = callback.from_user.id if callback.from_user else None
+    if callback.message:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+    if uid and callback.bot:
+        await callback.bot.send_message(
+            uid,
+            "✅ Hisoblagich yangilandi." + extra,
+            parse_mode=ParseMode.HTML,
+            reply_markup=admin_main_menu(),
+        )
+
+
+@router.callback_query(
+    StateFilter(EditStoreStates.kw_confirm),
+    F.data.startswith("bckw:"),
+)
+async def cb_kw_back(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    parts = (callback.data or "").split(":")
+    if len(parts) != 2 or not parts[1].isdigit():
+        return
+    sid = int(parts[1])
+    data = await state.get_data()
+    if data.get("edit_store_id") != sid:
+        await callback.answer("Sessiya buzildi.", show_alert=True)
+        return
+
+    await state.update_data(pending_kw_new=None)
+    await state.set_state(EditStoreStates.kw)
+    s = await _get_store_refreshed(sid)
+    if not s:
+        await state.clear()
+        if callback.message:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+        uid = callback.from_user.id if callback.from_user else None
+        if uid and callback.bot:
+            await callback.bot.send_message(
+                uid,
+                "Magazin topilmadi.",
+                reply_markup=admin_main_menu(),
+            )
+        return
+
+    cur = s.electricity_kw
+    prompt = (
+        "Yangi <b>hisoblagich ko'rsatkichini</b> yozing (kW, musbat butun son).\n"
+        f"Hozirgi qiymat: <code>{cur if cur is not None else '—'}</code>\n\n"
+        "Yangi qiymat avvalgisidan kichik bo'lmasin (hisoblagich orqaga qaytmaydi)."
     )
+    uid = callback.from_user.id if callback.from_user else None
+    if callback.message:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+    if uid and callback.bot:
+        await callback.bot.send_message(
+            uid,
+            prompt,
+            parse_mode=ParseMode.HTML,
+            reply_markup=cancel_keyboard(),
+        )
 
 
 @router.message(EditStoreStates.debt_subtract, F.text)
@@ -808,14 +1002,19 @@ async def edit_store_debt_subtract_commit(message: Message, state: FSMContext) -
         await message.answer("Sessiya buzildi.", reply_markup=admin_main_menu())
         return
 
-    now = datetime.now(TZ_TASHKENT)
     async with async_session_maker() as session:
         s = await session.get(Store, sid)
         if not s:
             await state.clear()
             await message.answer("Magazin topilmadi.", reply_markup=admin_main_menu())
             return
-        apply_rent_accrual_to_store(s, now)
+        if apply_rent_accrual_to_store(s, datetime.now(TZ_TASHKENT)):
+            await session.commit()
+        s = await session.get(Store, sid)
+        if not s:
+            await state.clear()
+            await message.answer("Magazin topilmadi.", reply_markup=admin_main_menu())
+            return
         debt_before = int(s.debt_balance or 0)
         pay = min(raw_amt, debt_before)
         if pay <= 0:
@@ -828,21 +1027,120 @@ async def edit_store_debt_subtract_commit(message: Message, state: FSMContext) -
             )
             return
         new_debt = debt_before - pay
-        s.debt_balance = new_debt
-        session.add(
-            StoreDebtPayment(
-                store_id=sid,
-                amount=pay,
-                debt_after=new_debt,
-                created_by_telegram_id=message.from_user.id,
-            )
-        )
-        await session.commit()
 
-    await state.clear()
-    await message.answer(
-        f"✅ Qarzdan ayirildi: <b>{fmt_money(pay)}</b> so'm.\n"
-        f"Qoldiq: <b>{fmt_money(new_debt)}</b> so'm.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=admin_main_menu(),
+    await state.update_data(
+        pending_debt_raw=raw_amt,
+        pending_debt_admin_id=message.from_user.id,
     )
+    await state.set_state(EditStoreStates.debt_subtract_confirm)
+    await message.answer(
+        "⚠️ <b>Qarzdan ayirishni tasdiqlaysizmi?</b>\n\n"
+        f"Ayiriladi: <b>{fmt_money(pay)}</b> so'm "
+        f"(siz yozgan: <b>{fmt_money(raw_amt)}</b> so'm)\n"
+        f"Yangi qarz: <b>{fmt_money(new_debt)}</b> so'm",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_debt_confirm_kb(sid),
+    )
+
+
+@router.message(EditStoreStates.debt_subtract_confirm, F.text != BTN_CANCEL, F.text)
+async def edit_store_debt_confirm_wrong_input(message: Message) -> None:
+    await message.answer(
+        "Iltimos, pastdagi tugmalardan <b>Tasdiqlash</b> yoki <b>Orqaga</b>ni bosing.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(
+    StateFilter(EditStoreStates.debt_subtract_confirm),
+    F.data.startswith("ackp:"),
+)
+async def cb_debt_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    parts = (callback.data or "").split(":")
+    if len(parts) != 2 or not parts[1].isdigit():
+        return
+    sid = int(parts[1])
+    data = await state.get_data()
+    if data.get("edit_store_id") != sid:
+        await callback.answer("Sessiya buzildi.", show_alert=True)
+        return
+    raw_amt = data.get("pending_debt_raw")
+    admin_id = data.get("pending_debt_admin_id")
+    if not isinstance(raw_amt, int) or not isinstance(admin_id, int):
+        await callback.answer("Sessiya buzildi.", show_alert=True)
+        return
+
+    err, result = await _commit_debt_subtract(sid, raw_amt, admin_id)
+    if err:
+        await state.clear()
+        uid = callback.from_user.id if callback.from_user else None
+        if callback.message:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+        if uid and callback.bot:
+            await callback.bot.send_message(
+                uid,
+                err,
+                parse_mode=ParseMode.HTML,
+                reply_markup=admin_main_menu(),
+            )
+        return
+
+    pay, new_debt = result
+    await state.clear()
+    uid = callback.from_user.id if callback.from_user else None
+    if callback.message:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+    if uid and callback.bot:
+        await callback.bot.send_message(
+            uid,
+            f"✅ Qarzdan ayirildi: <b>{fmt_money(pay)}</b> so'm.\n"
+            f"Qoldiq: <b>{fmt_money(new_debt)}</b> so'm.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=admin_main_menu(),
+        )
+
+
+@router.callback_query(
+    StateFilter(EditStoreStates.debt_subtract_confirm),
+    F.data.startswith("bckp:"),
+)
+async def cb_debt_back(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    parts = (callback.data or "").split(":")
+    if len(parts) != 2 or not parts[1].isdigit():
+        return
+    sid = int(parts[1])
+    data = await state.get_data()
+    if data.get("edit_store_id") != sid:
+        await callback.answer("Sessiya buzildi.", show_alert=True)
+        return
+
+    await state.update_data(pending_debt_raw=None, pending_debt_admin_id=None)
+    await state.set_state(EditStoreStates.debt_subtract)
+    s = await _get_store_refreshed(sid)
+    debt = int(s.debt_balance or 0) if s else 0
+    prompt = (
+        "Qarzdan <b>ayriladigan</b> summani yozing (so'm, faqat raqam) — "
+        "egasi bergan pul miqdori.\n\n"
+        f"Hozirgi qarz: <b>{fmt_money(debt)}</b> so'm"
+    )
+    uid = callback.from_user.id if callback.from_user else None
+    if callback.message:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+    if uid and callback.bot:
+        await callback.bot.send_message(
+            uid,
+            prompt,
+            parse_mode=ParseMode.HTML,
+            reply_markup=cancel_keyboard(),
+        )
