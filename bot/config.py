@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     database_url: str
     bot_token: str = ""
     admin_ids: str = ""
+    # backup.py zaxirasini Telegramga yuborish (send.py)
+    backup_bot_token: str = ""
+    backup_send_chat_id: str = ""
 
     @property
     def admin_id_set(self) -> set[int]:
