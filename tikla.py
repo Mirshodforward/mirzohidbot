@@ -13,7 +13,7 @@ Ishlatish:
   python tikla.py --file backups/mirzohid_db_20260611_132358.sql --yes
   python tikla.py --yes --create-db --drop-existing
 
-Ehtiyot: `--drop-existing` mavjud jadvallarni o'chiradi (public schema).
+Ehtiyot: `--drop-existing` joriy DB foydalanuvchisiga tegishli obyektlarni o'chiradi.
 """
 
 from __future__ import annotations
@@ -113,18 +113,51 @@ def _create_database(cfg: dict[str, str | int], env: dict[str, str]) -> None:
     _run_psql(cfg, env, database="postgres", args=["-c", sql])
 
 
-def _drop_public_schema(cfg: dict[str, str | int], env: dict[str, str]) -> None:
+def _public_table_count(cfg: dict[str, str | int], env: dict[str, str]) -> int:
     db = _safe_db_name(str(cfg["database"]))
-    user = str(cfg["user"])
-    safe_user = user.replace('"', '""')
-    sql = (
-        "DROP SCHEMA IF EXISTS public CASCADE; "
-        "CREATE SCHEMA public; "
-        "GRANT ALL ON SCHEMA public TO public; "
-        f'GRANT ALL ON SCHEMA public TO "{safe_user}";'
+    result = subprocess.run(
+        _psql_base(cfg)
+        + [
+            "-d",
+            db,
+            "-tAc",
+            "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public'",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
     )
-    print(f"Mavjud jadvallar tozalanmoqda (public schema): {db}")
-    _run_psql(cfg, env, database=db, args=["-c", sql])
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        raise SystemExit(f"Jadvallarni sanab bo'lmadi: {err}")
+    return int((result.stdout or "0").strip() or "0")
+
+
+def _clean_existing_objects(cfg: dict[str, str | int], env: dict[str, str]) -> None:
+    """miniuser public schema egasi bo'lmasa ham ishlaydi (PG 15+)."""
+    db = _safe_db_name(str(cfg["database"]))
+    n = _public_table_count(cfg, env)
+    if n == 0:
+        print(f"Baza bo'sh ({db}) — tozalash o'tkazib yuborildi.")
+        return
+
+    print(f"Mavjud obyektlar tozalanmoqda ({n} ta jadval): {db}")
+    # Schema egasi bo'lmasdan DROP SCHEMA ishlamaydi; faqat o'z obyektlarini o'chiradi.
+    _run_psql(
+        cfg,
+        env,
+        database=db,
+        args=["-c", "DROP OWNED BY CURRENT_USER CASCADE;"],
+    )
+
+    left = _public_table_count(cfg, env)
+    if left > 0:
+        raise SystemExit(
+            f"{left} ta jadval qoldi (boshqa foydalanuvchiga tegishli).\n"
+            "postgres superuser bilan bir marta bajaring:\n"
+            f'  ALTER SCHEMA public OWNER TO "{cfg["user"]}";\n'
+            "yoki barcha jadvallarni o'chirib, qayta: python tikla.py --yes --drop-existing"
+        )
 
 
 def _latest_backup(backups_dir: Path) -> Path:
@@ -185,7 +218,7 @@ def run_restore(
             )
 
         if drop_existing:
-            _drop_public_schema(cfg, env)
+            _clean_existing_objects(cfg, env)
 
         print("Zaxira yuklanmoqda (psql)...")
         _run_psql(
@@ -227,7 +260,7 @@ def main() -> None:
     parser.add_argument(
         "--drop-existing",
         action="store_true",
-        help="Tiklashdan oldin public schema ni tozalash (mavjud jadvallar o'chadi)",
+        help="Tiklashdan oldin joriy foydalanuvchining obyektlarini o'chirish",
     )
     parser.add_argument(
         "--yes",
