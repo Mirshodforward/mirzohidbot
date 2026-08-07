@@ -4,7 +4,10 @@ from aiogram.types import (
     KeyboardButton,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
+    WebAppInfo,
 )
+
+from app.config import get_settings
 
 BTN_CANCEL = "❌ Bekor qilish"
 USER_BTN_TO_ADMIN = "✉️ Adminga xabar"
@@ -100,6 +103,36 @@ def user_main_menu() -> ReplyKeyboardMarkup:
 
 def remove_keyboard() -> ReplyKeyboardRemove:
     return ReplyKeyboardRemove()
+
+
+# --- Mini App ---------------------------------------------------------------
+
+
+def miniapp_url(path: str = "/app") -> str | None:
+    """Mini App manzili. HTTPS bo'lmasa None — Telegram http'ni rad etadi.
+
+    Lokal ishlab chiqishda (PUBLIC_BASE_URL=http://localhost:8000) tugma
+    umuman ko'rsatilmaydi, aks holda bot "Bad Request: bad webapp url" beradi.
+    """
+    base = (get_settings().public_base_url or "").strip().rstrip("/")
+    if not base.startswith("https://"):
+        return None
+    return base + path
+
+
+def miniapp_inline_keyboard(*, is_admin: bool) -> InlineKeyboardMarkup | None:
+    """/start dagi Mini App tugmasi. Admin boshqaruvga, egasi kabinetga tushadi."""
+    if is_admin:
+        url = miniapp_url("/app/admin")
+        text = "📊 Admin panelni ochish"
+    else:
+        url = miniapp_url("/app")
+        text = "🏪 Mening kabinetim"
+    if not url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=text, web_app=WebAppInfo(url=url))]]
+    )
 
 
 def store_date_keyboard() -> InlineKeyboardMarkup:

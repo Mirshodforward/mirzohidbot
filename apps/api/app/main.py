@@ -10,7 +10,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
-from app.bot.webhook import register_webhook_route, setup_webhook, teardown_webhook
+from app.bot.webhook import (
+    register_webhook_route,
+    setup_menu_button,
+    setup_webhook,
+    teardown_webhook,
+)
 from app.config import get_settings
 from app.db.session import acquire_single_instance_lock, release_single_instance_lock
 
@@ -53,6 +58,7 @@ async def lifespan(app: FastAPI):
             bot, dp = get_bot(), get_dispatcher()
             await bot.delete_webhook(drop_pending_updates=False)
             _spawn(dp.start_polling(bot, handle_signals=False), "polling")
+        await setup_menu_button()
         start_scheduler()
     elif not settings.bot_token.strip():
         logger.warning("BOT_TOKEN bo'sh — bot funksiyalari o'chirilgan.")

@@ -64,6 +64,29 @@ async def setup_webhook() -> None:
     logger.info("Webhook o'rnatildi: %s", settings.webhook_url)
 
 
+async def setup_menu_button() -> None:
+    """Xabar maydoni yonidagi doimiy "Menu" tugmasini Mini App ga bog'laydi.
+
+    Buni BotFather'da qo'lda qilish ham mumkin, lekin shu yerda avtomatik
+    o'rnatilsa domen o'zgarganda esdan chiqmaydi.
+    """
+    from aiogram.types import MenuButtonWebApp, WebAppInfo
+
+    from app.bot.keyboards import miniapp_url
+
+    url = miniapp_url("/app")
+    if not url:
+        logger.info("PUBLIC_BASE_URL HTTPS emas — Menu tugmasi o'rnatilmadi.")
+        return
+    try:
+        await get_bot().set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="Kabinet", web_app=WebAppInfo(url=url))
+        )
+        logger.info("Telegram Menu tugmasi Mini App ga bog'landi: %s", url)
+    except Exception:
+        logger.exception("Menu tugmasi o'rnatilmadi")
+
+
 async def teardown_webhook() -> None:
     try:
         await get_bot().delete_webhook(drop_pending_updates=False)

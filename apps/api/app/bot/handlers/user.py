@@ -16,6 +16,7 @@ from app.bot.keyboards import (
     USER_BTN_TO_ADMIN,
     cancel_keyboard,
     contact_request_keyboard,
+    miniapp_inline_keyboard,
     user_main_menu,
 )
 from app.bot.states import InviteLinkStates, OwnerStoreReplyStates, UserToAdminStates
@@ -125,6 +126,15 @@ async def on_contact_invite_link(message: Message, state: FSMContext) -> None:
             p,
             parse_mode=ParseMode.HTML,
             reply_markup=user_main_menu() if last else None,
+        )
+
+    # Egasi endigina ulandi — ilovani shu yerda ko'rsatish eng qulay payt.
+    kb = miniapp_inline_keyboard(is_admin=False)
+    if kb:
+        await message.answer(
+            "📱 Magazin ma'lumotlari, to'lov tarixi va admin bilan suhbat "
+            "— ilovada qulayroq:",
+            reply_markup=kb,
         )
 
 

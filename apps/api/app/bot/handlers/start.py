@@ -7,7 +7,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import select
 
-from app.bot.keyboards import admin_main_menu, contact_request_keyboard, user_main_menu
+from app.bot.keyboards import (
+    admin_main_menu,
+    contact_request_keyboard,
+    miniapp_inline_keyboard,
+    user_main_menu,
+)
 from app.bot.states import InviteLinkStates
 from app.config import is_admin
 from app.db.models import Store, User
@@ -77,11 +82,22 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             has_phone = bool(db_user.phone_number)
 
     if is_admin(tg.id):
+        # Ikki xabar: birinchisi doimiy menyu klaviaturasini o'rnatadi,
+        # ikkinchisi Mini App tugmasini beradi. Telegram bitta xabarda
+        # reply va inline klaviaturani birga yubora olmaydi.
         await message.answer(
             "Xush kelibsiz, admin!\n\n"
             "Quyidagi bo'limlardan birini tanlang.",
             reply_markup=admin_main_menu(),
         )
+        kb = miniapp_inline_keyboard(is_admin=True)
+        if kb:
+            await message.answer(
+                "📊 <b>Admin panel</b> — magazinlar, to'lovlar, hisoblagich, "
+                "hisobotlar va xabarlar bitta ekranda.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
         return
 
     if has_phone:
@@ -92,6 +108,13 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             parse_mode=ParseMode.HTML,
             reply_markup=user_main_menu(),
         )
+        kb = miniapp_inline_keyboard(is_admin=False)
+        if kb:
+            await message.answer(
+                "🏪 Magazin ma'lumotlari, to'lov tarixi va admin bilan "
+                "suhbat — ilovada qulayroq:",
+                reply_markup=kb,
+            )
         return
 
     await message.answer(
