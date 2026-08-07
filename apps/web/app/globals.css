@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/*
+ * Mavzu: sayt o'z ranglarida, Mini App esa Telegram mavzusiga moslashadi.
+ * `--tg-*` o'zgaruvchilarni TelegramProvider `document.documentElement` ga
+ * yozadi; Telegram tashqarisida fallback qiymatlar ishlaydi.
+ */
+@theme {
+  --color-brand-50: oklch(0.97 0.02 250);
+  --color-brand-100: oklch(0.93 0.05 250);
+  --color-brand-500: oklch(0.58 0.19 255);
+  --color-brand-600: oklch(0.51 0.19 255);
+  --color-brand-700: oklch(0.44 0.17 255);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --tg-bg: #ffffff;
+  --tg-text: #0f172a;
+  --tg-hint: #64748b;
+  --tg-card: #f8fafc;
+  --tg-border: #e2e8f0;
+  --tg-accent: #2563eb;
+}
+
+html[data-tg-theme="dark"] {
+  --tg-bg: #17212b;
+  --tg-text: #f1f5f9;
+  --tg-hint: #94a3b8;
+  --tg-card: #232e3c;
+  --tg-border: #2f3b49;
+  --tg-accent: #5288c1;
+}
+
+body {
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Mini App'da kontent Telegram sarlavhasi ostiga kirib ketmasin. */
+.tg-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

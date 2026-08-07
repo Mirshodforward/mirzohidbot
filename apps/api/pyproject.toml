@@ -1,0 +1,22 @@
+[project]
+name = "mirzohid-api"
+version = "1.0.0"
+description = "Magazin ijarasi: Telegram bot + Mini App + sayt uchun umumiy API"
+requires-python = ">=3.12"
+
+[tool.ruff]
+# 120 — bot handlerlaridagi inline klaviatura ta'riflari uzun, ularni faqat
+# formatlash uchun qayta yozish ishlab turgan kodga keraksiz xavf qo'shadi.
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["B008"]  # FastAPI Depends() argument default sifatida — bu normal
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

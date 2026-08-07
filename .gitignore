@@ -1,6 +1,28 @@
+# --- Sirlar ---
 .env
+.env.local
+.env.*.local
+
+# --- Python ---
 .venv/
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+
+# --- Node / Next ---
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# --- Muharrirlar ---
 .idea/
+.vscode/
+.DS_Store
+
+# --- DB zaxiralari: ichida real telefon raqamlari bor, repoga tushmasin ---
+backups/
+*.sql

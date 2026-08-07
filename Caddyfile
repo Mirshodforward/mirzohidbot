@@ -1,0 +1,44 @@
+# Caddy Let's Encrypt sertifikatini o'zi oladi va yangilaydi.
+# Telegram Mini App faqat HTTPS bilan ishlaydi — shuning uchun bu majburiy.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Telegram webhook — to'g'ridan-to'g'ri API ga (Next orqali o'tkazish shart emas).
+	handle /telegram/* {
+		reverse_proxy api:8000
+	}
+
+	# REST API. Mini App brauzerdan shu yerga uradi.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Faqat ishlab chiqish paytida ochiq qoldiring: production'da API hujjatlari
+	# tashqariga chiqmagani ma'qul. Kerak bo'lmasa shu blokni o'chiring.
+	handle /docs* {
+		reverse_proxy api:8000
+	}
+	handle /openapi.json {
+		reverse_proxy api:8000
+	}
+
+	# Qolgan hammasi — Next.js (sayt + Mini App).
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# DIQQAT: X-Frame-Options QO'YMANG — Telegram Mini App sahifani
+		# iframe ichida ochadi va u bilan oq ekran chiqadi.
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

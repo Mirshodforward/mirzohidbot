@@ -1,0 +1,21 @@
+# --- Web ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic-settings==2.6.1
+PyJWT==2.10.1
+
+# --- Bot ---
+aiogram==3.15.0
+
+# --- Baza ---
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg[binary]==3.2.3          # faqat Alembic (sinxron) uchun
+
+# --- Fon vazifalari ---
+apscheduler==3.11.0
+
+# --- Boshqa ---
+python-dotenv==1.0.1
+openpyxl==3.1.5
