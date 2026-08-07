@@ -52,6 +52,16 @@ def register_webhook_route(app) -> None:
         return {"ok": True}
 
 
+def _masked_webhook_url() -> str:
+    """Log uchun: yo'lning maxfiy qismi ko'rsatilmaydi.
+
+    To'liq URL ichida WEBHOOK_SECRET bor — uni jurnalga yozish sirni
+    journalctl'ni o'qiy oladigan har kimga oshkor qiladi.
+    """
+    settings = get_settings()
+    return settings.public_base_url.rstrip("/") + "/telegram/webhook/***"
+
+
 async def setup_webhook() -> None:
     settings = get_settings()
     bot = get_bot()
@@ -61,7 +71,7 @@ async def setup_webhook() -> None:
         drop_pending_updates=False,
         allowed_updates=get_dispatcher().resolve_used_update_types(),
     )
-    logger.info("Webhook o'rnatildi: %s", settings.webhook_url)
+    logger.info("Webhook o'rnatildi: %s", _masked_webhook_url())
 
 
 async def setup_menu_button() -> None:
