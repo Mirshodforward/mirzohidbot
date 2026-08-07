@@ -1,0 +1,40 @@
+[Unit]
+Description=Mirzohid Web (Next.js — sayt + Mini App)
+After=network-online.target mirzohid-api.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=mirzohid
+Group=mirzohid
+WorkingDirectory=/opt/mirzohid/apps/web
+
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=PORT=3801
+Environment=HOSTNAME=127.0.0.1
+# Next server-side rewrite shu manzilga uzatadi (next.config.ts)
+Environment=API_ORIGIN=http://127.0.0.1:8801
+
+# `output: "standalone"` build natijasi
+ExecStart=/usr/bin/node /opt/mirzohid/apps/web/.next/standalone/server.js
+
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mirzohid-web
+
+[Install]
+WantedBy=multi-user.target

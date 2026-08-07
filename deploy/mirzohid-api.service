@@ -1,0 +1,39 @@
+[Unit]
+Description=Mirzohid API (FastAPI + Telegram bot + scheduler)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=mirzohid
+Group=mirzohid
+WorkingDirectory=/opt/mirzohid/apps/api
+EnvironmentFile=/opt/mirzohid/.env
+
+# Bitta worker: bot va scheduler shu jarayonda yashaydi. Ko'proq kerak bo'lsa
+# --workers N qo'ying — advisory lock tufayli bot/scheduler baribir bittasida
+# ishlaydi, qolganlari faqat API xizmat qiladi.
+ExecStart=/opt/mirzohid/apps/api/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8801 --proxy-headers --forwarded-allow-ips='127.0.0.1'
+
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+# --- Xavfsizlik ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mirzohid/backups
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mirzohid-api
+
+[Install]
+WantedBy=multi-user.target
