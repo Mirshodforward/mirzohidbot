@@ -197,3 +197,78 @@ sudo systemctl stop mirzohid-api mirzohid-web
 sudo -u postgres psql -d mirzohid_db < /root/mirzohid_db_<sana>.sql
 # eski botni qayta yoqing
 ```
+
+---
+
+## Haqiqiy deploy (2026-08-07) — nima boshqacha bo'ldi
+
+Yuqoridagi umumiy qadamlardan farqlari. Ular serverni ko'rgandan keyin
+majburan o'zgardi:
+
+### 1. Alohida DB foydalanuvchisi — `miniuser` EMAS
+
+`miniuser` **9 ta bazaga** egalik qiladi va **5 ta ishlab turgan loyiha**
+(kinobot, oxangxbot, paymee, premiumtg, xprem) o'sha parol bilan ulanadi.
+Uning parolini almashtirish ularni bir zumda o'chiradi.
+
+Shuning uchun Mirzohid uchun alohida rol ochildi:
+
+```sql
+CREATE ROLE mirzohid_app LOGIN PASSWORD '<tasodifiy 32 belgi>';
+GRANT CONNECT ON DATABASE mirzohid_db TO mirzohid_app;
+-- mirzohid_db ichida:
+GRANT USAGE, CREATE ON SCHEMA public TO mirzohid_app;
+GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO mirzohid_app;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO mirzohid_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO mirzohid_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO mirzohid_app;
+```
+
+Bu rol faqat `mirzohid_db` ni ko'radi — boshqa 8 ta bazaga kira olmaydi.
+
+### 2. Frontend LOKAL build qilinadi, serverda emas
+
+Serverda 957 MB xotira va ~180 MB bo'sh joy bor, `swapfile` esa 100% to'la.
+`npm run build` (~0.5–1 GB) shu yerda OOM killer'ni uyg'otib, ishlab turgan
+loyihalarni o'ldirishi mumkin.
+
+Shuning uchun build ishlab chiquvchi mashinasida qilinadi va **artefakt**
+jo'natiladi:
+
+```bash
+# lokal mashinada
+cd apps/web
+API_ORIGIN=http://127.0.0.1:8801 npm run build     # <-- API_ORIGIN MAJBURIY
+cp -r .next/static .next/standalone/.next/
+cp -r public .next/standalone/
+tar czf /tmp/mrz_web.tgz -C .next standalone
+scp /tmp/mrz_web.tgz root@SERVER:/tmp/
+
+# serverda
+systemctl stop mirzohid-web
+rm -rf /opt/mirzohid/apps/web/.next/standalone
+tar xzf /tmp/mrz_web.tgz -C /opt/mirzohid/apps/web/.next/
+chown -R mirzohid:mirzohid /opt/mirzohid/apps/web
+systemctl start mirzohid-web
+```
+
+**`API_ORIGIN` ni build paytida berish shart.** Next `rewrites()` manzilini
+`routes-manifest.json` ga yozib qo'yadi; standalone rejimda ishga tushganda
+muhit o'zgaruvchisi qayta o'qilmaydi. Bersangiz — `/api/*` ishlaydi,
+bermasangiz `localhost:8000` qotib qoladi va 500 qaytaradi.
+
+`next.config.ts` da `images.unoptimized = true` — aks holda standalone
+build'ga build qilingan platformaning `sharp` binarisi tushadi (Windows'da
+build qilinsa `sharp-win32-x64`) va u Linuxda ishlamaydi.
+
+### 3. Python 3.10
+
+Server Ubuntu 22.04 / Python 3.10. Kod shunga moslashtirilgan
+(`StrEnum` va `datetime.UTC` ishlatilmaydi). `python3.10-venv` allaqachon
+o'rnatilgan edi.
+
+### 4. Xotira
+
+Deploy dan keyin: uvicorn ~174 MB, next-server ~68 MB, bo'sh ~179 MB,
+`swapfile` (2 GB) 100% to'la. OOM bo'lmadi, lekin zaxira deyarli yo'q.
+Droplet'ni 2 GB ga ko'tarish tavsiya qilinadi.

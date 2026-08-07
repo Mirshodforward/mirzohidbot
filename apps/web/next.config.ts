@@ -26,6 +26,13 @@ const nextConfig: NextConfig = {
   async rewrites() {
     // Brauzer /api/... ga uradi, Next uni FastAPI ga uzatadi. Shu tufayli
     // frontend va backend bitta origin: CORS va cookie muammosi yo'q.
+    //
+    // DIQQAT: rewrite manzili **build paytida** routes-manifest.json ga
+    // yoziladi — standalone rejimda ishga tushganda API_ORIGIN o'qilmaydi.
+    // Shuning uchun production build'ni to'g'ri qiymat bilan qiling:
+    //     API_ORIGIN=http://127.0.0.1:8801 npm run build
+    // (Productionda asosiy yo'l baribir nginx: /api/* to'g'ridan-to'g'ri
+    // API ga ketadi. Bu rewrite — zaxira va `npm run dev` uchun.)
     return [{ source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` }];
   },
 
