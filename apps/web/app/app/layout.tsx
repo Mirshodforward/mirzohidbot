@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { AppShell } from "@/components/AppShell";
 import { SessionProvider } from "@/components/SessionProvider";
 
 export const metadata: Metadata = {
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <div className="tg-safe mx-auto min-h-dvh w-full max-w-2xl px-4 py-5">{children}</div>
+      <AppShell>{children}</AppShell>
     </SessionProvider>
   );
 }

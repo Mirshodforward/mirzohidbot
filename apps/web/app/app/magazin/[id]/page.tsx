@@ -5,6 +5,7 @@ import { use, useEffect, useState } from "react";
 
 import { Badge, Card, ErrorBox, Row, Skeleton } from "@/components/ui";
 import { useSession } from "@/components/SessionProvider";
+import { StoreAdminActions } from "@/components/StoreAdminActions";
 import {
   ApiError,
   api,
@@ -16,9 +17,9 @@ import {
 import { date, dateTime, daysUntil, money, sum } from "@/lib/format";
 import { haptic } from "@/lib/telegram";
 
-type Tab = "umumiy" | "tolovlar" | "tok" | "suhbat";
+type Tab = "umumiy" | "tolovlar" | "tok" | "suhbat" | "amallar";
 
-const TABS: { id: Tab; label: string }[] = [
+const BASE_TABS: { id: Tab; label: string }[] = [
   { id: "umumiy", label: "Umumiy" },
   { id: "tolovlar", label: "To'lovlar" },
   { id: "tok", label: "Tok" },
@@ -34,6 +35,12 @@ export default function StorePage({ params }: { params: Promise<{ id: string }> 
   const [store, setStore] = useState<Store | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("umumiy");
+  // Admin amali bajarilgach ma'lumotni qayta o'qish uchun hisoblagich.
+  const [version, setVersion] = useState(0);
+
+  const tabs = me?.is_admin
+    ? [...BASE_TABS, { id: "amallar" as Tab, label: "Amallar" }]
+    : BASE_TABS;
 
   useEffect(() => {
     if (!me || !Number.isFinite(storeId)) return;
@@ -43,7 +50,7 @@ export default function StorePage({ params }: { params: Promise<{ id: string }> 
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Magazin yuklanmadi."),
       );
-  }, [me, storeId]);
+  }, [me, storeId, version]);
 
   if (sessionLoading || (!store && !error)) {
     return (
@@ -79,7 +86,7 @@ export default function StorePage({ params }: { params: Promise<{ id: string }> 
         className="flex gap-1 overflow-x-auto rounded-lg p-1"
         style={{ background: "var(--tg-card)" }}
       >
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => {
@@ -129,9 +136,12 @@ export default function StorePage({ params }: { params: Promise<{ id: string }> 
         </Card>
       )}
 
-      {tab === "tolovlar" && <PaymentsTab storeId={storeId} />}
-      {tab === "tok" && <ElectricityTab storeId={storeId} />}
+      {tab === "tolovlar" && <PaymentsTab storeId={storeId} key={`p${version}`} />}
+      {tab === "tok" && <ElectricityTab storeId={storeId} key={`e${version}`} />}
       {tab === "suhbat" && <ChatTab storeId={storeId} />}
+      {tab === "amallar" && me?.is_admin && (
+        <StoreAdminActions store={store} onChanged={() => setVersion((v) => v + 1)} />
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 
 from app.bot.formatting.store_invite import new_invite_start_arg, telegram_me_link
 from app.core.deps import AdminDep, SessionDep
@@ -13,7 +13,7 @@ from app.db.global_tok_price import (
     get_electricity_price_per_kw,
     set_electricity_price_per_kw,
 )
-from app.db.models import Store, User
+from app.db.models import Store, StoreDebtPayment, StoreElectricityLog, User
 from app.domain.store_flow import next_rent_payment_dt, normalize_phone, tashkent_today_start
 from app.schemas.store import (
     BroadcastIn,
@@ -21,6 +21,7 @@ from app.schemas.store import (
     ElectricityPriceIn,
     ElectricityPriceOut,
     ElectricityReadingIn,
+    InviteOut,
     PaymentIn,
     PaymentOut,
     StoreCreatedOut,
@@ -33,9 +34,12 @@ from app.services.stores import (
     apply_electricity_reading,
     apply_payment,
     get_store_locked,
+    refresh_all_stores,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _bad(exc: StoreError) -> HTTPException:
@@ -166,6 +170,107 @@ async def add_electricity_reading(
 
     store = await session.get(Store, store_id)
     return await _out(store)  # type: ignore[arg-type]
+
+
+@router.post("/stores/{store_id}/invite", response_model=InviteOut)
+async def regenerate_invite(store_id: int, admin: AdminDep, session: SessionDep) -> InviteOut:
+    """Egasi ulanmagan bo'lsa yangi taklif havolasi yaratadi.
+
+    Eski token bekor bo'ladi — yo'qolgan yoki notanish odamga tushgan havola
+    bilan kirib bo'lmaydi.
+    """
+    store = await session.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Magazin topilmadi.")
+
+    token = new_invite_start_arg()
+    store.owner_invite_token = token
+    await session.commit()
+
+    link: str | None = None
+    try:
+        from app.bot.dispatcher import get_bot
+
+        me = await get_bot().get_me()
+        if me.username:
+            link = telegram_me_link(me.username, token)
+    except Exception:
+        link = None
+    return InviteOut(token=token, link=link)
+
+
+@router.get("/export/stores.xlsx", response_class=Response)
+async def export_stores(admin: AdminDep, session: SessionDep) -> Response:
+    """Barcha magazinlar — Excel (botdagi '📈 Hisobot' bilan bir xil)."""
+    from app.services.excel_stores import stores_to_xlsx_bytes
+
+    stores = await refresh_all_stores(session)
+    await session.commit()
+    price = await get_electricity_price_per_kw()
+    data = stores_to_xlsx_bytes(stores, price)
+    return Response(
+        content=data,
+        media_type=XLSX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="magazinlar.xlsx"'},
+    )
+
+
+@router.get("/export/full-report.xlsx", response_class=Response)
+async def export_full_report(admin: AdminDep, session: SessionDep) -> Response:
+    """Magazinlar + qarzdan ayirishlar + tok tarixi — uch varaqli Excel."""
+    from app.services.excel_stores import admin_report_xlsx_bytes
+
+    stores = await refresh_all_stores(session)
+    await session.commit()
+
+    pay_rows = [
+        tuple(r)
+        for r in (
+            await session.execute(
+                select(
+                    StoreDebtPayment.id,
+                    StoreDebtPayment.store_id,
+                    Store.name,
+                    StoreDebtPayment.amount,
+                    StoreDebtPayment.debt_after,
+                    StoreDebtPayment.created_at,
+                    StoreDebtPayment.created_by_telegram_id,
+                )
+                .join(Store, Store.id == StoreDebtPayment.store_id)
+                .order_by(desc(StoreDebtPayment.id))
+                .limit(8000)
+            )
+        ).all()
+    ]
+    elec_rows = [
+        tuple(r)
+        for r in (
+            await session.execute(
+                select(
+                    StoreElectricityLog.id,
+                    StoreElectricityLog.store_id,
+                    Store.name,
+                    StoreElectricityLog.period_from,
+                    StoreElectricityLog.period_to,
+                    StoreElectricityLog.reading_before,
+                    StoreElectricityLog.reading_after,
+                    StoreElectricityLog.delta_kw,
+                    StoreElectricityLog.created_at,
+                )
+                .join(Store, Store.id == StoreElectricityLog.store_id)
+                .order_by(desc(StoreElectricityLog.id))
+                .limit(8000)
+            )
+        ).all()
+    ]
+
+    price = await get_electricity_price_per_kw()
+    data = admin_report_xlsx_bytes(stores, pay_rows, elec_rows, price)
+    return Response(
+        content=data,
+        media_type=XLSX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="mirzohid_hisobot.xlsx"'},
+    )
 
 
 @router.get("/settings/electricity-price", response_model=ElectricityPriceOut)

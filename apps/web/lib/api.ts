@@ -131,6 +131,42 @@ interface TokenResponse {
   expires_in_sec: number;
 }
 
+export interface Stats {
+  stores: number;
+  users: number;
+  linked_users: number;
+  total_debt: number;
+  generated_at: string;
+}
+
+export interface Invite {
+  token: string;
+  link: string | null;
+}
+
+export interface StoreCreated {
+  store: Store;
+  invite_link: string | null;
+  invite_token: string | null;
+}
+
+export interface StoreCreateInput {
+  name: string;
+  owner_phone: string;
+  address: string;
+  monthly_amount: number;
+  electricity_kw: number;
+  store_date?: string | null;
+  description?: string | null;
+}
+
+export interface StoreUpdateInput {
+  name?: string;
+  address?: string;
+  monthly_amount?: number;
+  description?: string | null;
+}
+
 export const api = {
   loginTelegram: async (initData: string): Promise<TokenResponse> => {
     const out = await request<TokenResponse>("/auth/telegram", {
@@ -172,4 +208,78 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ body }),
     }),
+};
+
+/** Faqat admin uchun. Token adminniki bo'lmasa server 403 qaytaradi. */
+export const adminApi = {
+  stats: () => request<Stats>("/admin/stats"),
+
+  createStore: (data: StoreCreateInput) =>
+    request<StoreCreated>("/admin/stores", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateStore: (id: number, data: StoreUpdateInput) =>
+    request<Store>(`/admin/stores/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteStore: (id: number) =>
+    request<void>(`/admin/stores/${id}`, { method: "DELETE" }),
+
+  addPayment: (id: number, amount: number) =>
+    request<Payment>(`/admin/stores/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
+
+  addReading: (id: number, reading: number) =>
+    request<Store>(`/admin/stores/${id}/electricity`, {
+      method: "POST",
+      body: JSON.stringify({ reading }),
+    }),
+
+  regenerateInvite: (id: number) =>
+    request<Invite>(`/admin/stores/${id}/invite`, { method: "POST" }),
+
+  getPrice: () =>
+    request<{ price_per_kw: number | null }>("/admin/settings/electricity-price"),
+
+  setPrice: (price_per_kw: number) =>
+    request<{ price_per_kw: number | null }>("/admin/settings/electricity-price", {
+      method: "PUT",
+      body: JSON.stringify({ price_per_kw }),
+    }),
+
+  broadcast: (text: string) =>
+    request<{ sent: number; blocked: number; failed: number }>("/admin/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+
+  /** Excel yuklab olish — blob sifatida, keyin brauzerda saqlanadi. */
+  downloadExcel: async (kind: "stores" | "full-report"): Promise<void> => {
+    const headers = new Headers();
+    const token = getToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    const res = await fetch(`/api/v1/admin/export/${kind}.xlsx`, {
+      headers,
+      credentials: "include",
+    });
+    if (!res.ok) throw new ApiError("Fayl yuklanmadi", res.status);
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = kind === "stores" ? "magazinlar.xlsx" : "mirzohid_hisobot.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Brauzer yuklab bo'lgunicha biroz kutamiz, keyin xotirani bo'shatamiz.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  },
 };

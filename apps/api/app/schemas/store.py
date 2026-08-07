@@ -49,6 +49,11 @@ class StoreCreatedOut(BaseModel):
     invite_token: str | None = None
 
 
+class InviteOut(BaseModel):
+    token: str
+    link: str | None = None
+
+
 class PaymentIn(BaseModel):
     amount: int = Field(gt=0, description="Qarzdan ayiriladigan summa (so'm)")
 
