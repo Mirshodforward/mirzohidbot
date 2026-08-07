@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/**
- * Pastdagi navigatsiya — mobil ilovalardagidek.
- * Faqat admin ko'radi (`/app/admin/*` va `/app` bo'limlari).
- */
+import {
+  IconDashboard,
+  IconMessage,
+  IconSettings,
+  IconStore,
+} from "@/components/icons";
 
+/** Pastki navigatsiya. To'rt bo'lim — mobil uchun beshtadan oshmasligi kerak. */
 const ITEMS = [
-  { href: "/app", label: "Magazinlar", icon: "🏪" },
-  { href: "/app/admin", label: "Boshqaruv", icon: "📊" },
-  { href: "/app/admin/xabar", label: "Xabar", icon: "✉️" },
-  { href: "/app/admin/sozlamalar", label: "Sozlama", icon: "⚙️" },
+  { href: "/app", label: "Magazinlar", Icon: IconStore },
+  { href: "/app/admin", label: "Boshqaruv", Icon: IconDashboard },
+  { href: "/app/admin/xabar", label: "Xabar", Icon: IconMessage },
+  { href: "/app/admin/sozlamalar", label: "Sozlama", Icon: IconSettings },
 ];
 
 export function AdminNav() {
@@ -20,23 +23,25 @@ export function AdminNav() {
 
   return (
     <nav
-      className="sticky bottom-0 -mx-4 mt-6 border-t px-2 pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom))]"
-      style={{ background: "var(--tg-bg)", borderColor: "var(--tg-border)" }}
+      aria-label="Asosiy bo'limlar"
+      className="safe-b sticky bottom-0 -mx-4 mt-6 border-t border-line bg-bg/95 px-2 pt-1 backdrop-blur"
     >
       <ul className="flex">
-        {ITEMS.map((item) => {
-          // `/app` faqat aynan mos kelganda faol — aks holda hamma sahifada yonadi.
-          const active =
-            item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
+        {ITEMS.map(({ href, label, Icon }) => {
+          // `/app` faqat aynan mos kelganda faol — aks holda barcha
+          // ichki sahifalarda ham yonib turadi.
+          const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
           return (
-            <li key={item.href} className="flex-1">
+            <li key={href} className="flex-1">
               <Link
-                href={item.href}
-                className="flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-medium"
-                style={{ color: active ? "var(--tg-accent)" : "var(--tg-hint)" }}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-[54px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-medium transition-colors ${
+                  active ? "text-primary" : "text-muted"
+                }`}
               >
-                <span className="text-lg leading-none">{item.icon}</span>
-                {item.label}
+                <Icon size={21} />
+                {label}
               </Link>
             </li>
           );

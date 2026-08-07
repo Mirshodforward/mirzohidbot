@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button, Input, Notice } from "@/components/form";
+import { IconArrowLeft } from "@/components/icons";
 import { ApiError, api } from "@/lib/api";
 
 type Step = "phone" | "code";
@@ -46,22 +48,18 @@ export default function LoginPage() {
     }
   }
 
-  const inputClass =
-    "w-full rounded-lg border px-4 py-3 text-base outline-none focus:border-brand-500";
-  const inputStyle = {
-    borderColor: "var(--tg-border)",
-    background: "var(--tg-card)",
-    color: "var(--tg-text)",
-  };
-
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-12">
-      <Link href="/" className="text-sm" style={{ color: "var(--tg-hint)" }}>
-        ← Bosh sahifa
+      <Link
+        href="/"
+        className="inline-flex min-h-[44px] w-fit cursor-pointer items-center gap-1.5 text-sm text-muted"
+      >
+        <IconArrowLeft size={18} />
+        Bosh sahifa
       </Link>
 
-      <h1 className="mt-8 text-2xl font-bold tracking-tight">Kabinetga kirish</h1>
-      <p className="mt-2 text-sm" style={{ color: "var(--tg-hint)" }}>
+      <h1 className="mt-6 text-2xl font-bold tracking-tight">Kabinetga kirish</h1>
+      <p className="mt-2 text-sm text-muted">
         {step === "phone"
           ? "Botga ulangan telefon raqamingizni kiriting — kirish kodi Telegramingizga yuboriladi."
           : "Telegramga kelgan 6 xonali kodni kiriting."}
@@ -69,28 +67,24 @@ export default function LoginPage() {
 
       {step === "phone" ? (
         <form onSubmit={submitPhone} className="mt-8 space-y-4">
-          <input
+          <Input
+            label="Telefon raqam"
             type="tel"
             inputMode="tel"
             autoComplete="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+998941339383"
-            className={inputClass}
-            style={inputStyle}
             required
           />
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-lg bg-brand-600 py-3 font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
-          >
+          <Button type="submit" disabled={busy}>
             {busy ? "Yuborilmoqda…" : "Kod yuborish"}
-          </button>
+          </Button>
         </form>
       ) : (
         <form onSubmit={submitCode} className="mt-8 space-y-4">
-          <input
+          <Input
+            label="Kirish kodi"
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
@@ -98,42 +92,32 @@ export default function LoginPage() {
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             placeholder="123456"
-            className={`${inputClass} text-center text-2xl tracking-[0.5em]`}
-            style={inputStyle}
+            className="nums text-center text-2xl tracking-[0.4em]"
             required
             autoFocus
           />
-          <button
-            type="submit"
-            disabled={busy || code.length < 4}
-            className="w-full rounded-lg bg-brand-600 py-3 font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
-          >
+          <Button type="submit" disabled={busy || code.length < 4}>
             {busy ? "Tekshirilmoqda…" : "Kirish"}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            tone="neutral"
             onClick={() => {
               setStep("phone");
               setCode("");
               setError(null);
             }}
-            className="w-full py-2 text-sm"
-            style={{ color: "var(--tg-hint)" }}
           >
-            Raqamni o'zgartirish
-          </button>
+            Raqamni o&apos;zgartirish
+          </Button>
         </form>
       )}
 
-      {note && step === "code" && (
-        <p className="mt-4 text-sm" style={{ color: "var(--tg-hint)" }}>
-          {note}
-        </p>
-      )}
+      {note && step === "code" && <p className="mt-4 text-sm text-muted">{note}</p>}
       {error && (
-        <p className="mt-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-600">
-          {error}
-        </p>
+        <div className="mt-4">
+          <Notice tone="error">{error}</Notice>
+        </div>
       )}
     </main>
   );

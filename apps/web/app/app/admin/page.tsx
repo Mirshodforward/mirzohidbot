@@ -5,9 +5,16 @@ import { useEffect, useState } from "react";
 
 import { useSession } from "@/components/SessionProvider";
 import { Button, Notice } from "@/components/form";
-import { Card, ErrorBox, Skeleton } from "@/components/ui";
+import {
+  IconDownload,
+  IconPlus,
+  IconStore,
+  IconUsers,
+  IconWallet,
+} from "@/components/icons";
+import { Card, ErrorBox, PageTitle, Skeleton } from "@/components/ui";
 import { ApiError, adminApi, type Stats } from "@/lib/api";
-import { sum } from "@/lib/format";
+import { money } from "@/lib/format";
 
 export default function AdminDashboard() {
   const { me, loading } = useSession();
@@ -25,7 +32,7 @@ export default function AdminDashboard() {
       );
   }, [me]);
 
-  if (loading) return <Skeleton className="h-48 w-full" />;
+  if (loading) return <Skeleton className="h-56 w-full" />;
   if (!me?.is_admin) {
     return (
       <ErrorBox message="Bu bo'lim faqat admin uchun. Agar admin bo'lsangiz, ADMIN_IDS ro'yxatida Telegram ID'ingiz borligini tekshiring." />
@@ -46,83 +53,93 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold tracking-tight">Boshqaruv</h1>
+      <PageTitle>Boshqaruv</PageTitle>
 
       {error && <Notice tone="error">{error}</Notice>}
 
       {!stats ? (
-        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-40 w-full" />
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          <StatTile label="Magazinlar" value={String(stats.stores)} />
-          <StatTile label="Foydalanuvchilar" value={String(stats.users)} />
-          <StatTile label="Kontakt ulaganlar" value={String(stats.linked_users)} />
-          <StatTile label="Jami qarz" value={sum(stats.total_debt)} accent />
-        </div>
+        <>
+          {/* Asosiy raqam alohida, kattaroq — qolganlari ikkinchi darajali */}
+          <Card className="bg-surface-2">
+            <div className="flex items-center gap-2 text-muted">
+              <IconWallet size={18} />
+              <span className="text-xs">Jami qarz</span>
+            </div>
+            <p className="nums mt-1.5 text-3xl font-bold">{money(stats.total_debt)}</p>
+            <p className="mt-1 text-xs text-muted">so&apos;m</p>
+          </Card>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            <Tile icon={<IconStore size={18} />} label="Magazin" value={stats.stores} />
+            <Tile icon={<IconUsers size={18} />} label="Foydalanuvchi" value={stats.users} />
+            <Tile
+              icon={<IconUsers size={18} />}
+              label="Kontakt ulagan"
+              value={stats.linked_users}
+            />
+          </div>
+        </>
       )}
 
       <Link href="/app/admin/yangi" className="block">
-        <Button>➕ Yangi magazin qo&apos;shish</Button>
+        <Button icon={<IconPlus size={18} />}>Yangi magazin qo&apos;shish</Button>
       </Link>
 
       <Card>
-        <p className="mb-3 font-medium">Hisobotlar</p>
+        <p className="mb-3 font-semibold">Hisobotlar</p>
         <div className="space-y-2">
           <Button
             tone="neutral"
             onClick={() => download("stores")}
             disabled={busy !== null}
+            icon={<IconDownload size={18} />}
           >
-            {busy === "stores" ? "Yuklanmoqda…" : "📊 Magazinlar (Excel)"}
+            {busy === "stores" ? "Yuklanmoqda…" : "Magazinlar (Excel)"}
           </Button>
           <Button
             tone="neutral"
             onClick={() => download("full-report")}
             disabled={busy !== null}
+            icon={<IconDownload size={18} />}
           >
-            {busy === "full-report" ? "Yuklanmoqda…" : "📋 To'liq hisobot (Excel)"}
+            {busy === "full-report" ? "Yuklanmoqda…" : "To'liq hisobot (Excel)"}
           </Button>
         </div>
-        <p className="mt-2 text-xs" style={{ color: "var(--tg-hint)" }}>
-          To&apos;liq hisobot: magazinlar + qarzdan ayirishlar + tok tarixi.
+        <p className="mt-2.5 text-xs text-muted">
+          To&apos;liq hisobot uch varaqdan iborat: magazinlar, qarzdan ayirishlar
+          va tok tarixi.
         </p>
       </Card>
 
       <Card>
-        <p className="mb-1 font-medium">Eslatma jadvali</p>
-        <p className="text-sm" style={{ color: "var(--tg-hint)" }}>
-          Qarzi bor magazin egalariga har kuni <strong>09:00</strong> da (Toshkent
-          vaqti) Telegramga eslatma boradi. Server o&apos;sha paytda o&apos;chiq
-          bo&apos;lsa, ko&apos;tarilgach o&apos;sha kunning eslatmasi baribir yuboriladi.
+        <p className="mb-1 font-semibold">Eslatma jadvali</p>
+        <p className="text-sm text-muted">
+          Qarzi bor magazin egalariga har kuni soat <strong>09:00</strong> da
+          (Toshkent vaqti) Telegramga eslatma boradi. Server o&apos;sha paytda
+          o&apos;chiq bo&apos;lsa, ko&apos;tarilgach o&apos;sha kunning eslatmasi
+          baribir yuboriladi.
         </p>
       </Card>
     </div>
   );
 }
 
-function StatTile({
+function Tile({
+  icon,
   label,
   value,
-  accent = false,
 }: {
+  icon: React.ReactNode;
   label: string;
-  value: string;
-  accent?: boolean;
+  value: number;
 }) {
   return (
-    <div
-      className="rounded-xl border p-4"
-      style={{ borderColor: "var(--tg-border)", background: "var(--tg-card)" }}
-    >
-      <p className="text-xs" style={{ color: "var(--tg-hint)" }}>
-        {label}
-      </p>
-      <p
-        className="mt-1 text-lg font-bold tabular-nums"
-        style={accent ? { color: "#dc2626" } : undefined}
-      >
-        {value}
-      </p>
+    <div className="rounded-2xl border border-line bg-surface p-3">
+      <span className="text-muted">{icon}</span>
+      <p className="nums mt-1.5 text-xl font-bold">{value}</p>
+      <p className="mt-0.5 text-[11px] leading-tight text-muted">{label}</p>
     </div>
   );
 }

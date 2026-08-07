@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { useSession } from "@/components/SessionProvider";
 import { Button, Input, NumberInput, Notice, Textarea } from "@/components/form";
+import { IconArrowLeft, IconCheck, IconCopy } from "@/components/icons";
 import { Card, ErrorBox } from "@/components/ui";
 import { ApiError, adminApi, type StoreCreated } from "@/lib/api";
 import { money } from "@/lib/format";
@@ -30,6 +31,7 @@ export default function NewStorePage() {
   if (loading) return null;
   if (!me?.is_admin) return <ErrorBox message="Bu bo'lim faqat admin uchun." />;
 
+  const phoneTouched = phone.length > 4;
   const phoneOk = /^\+998\d{9}$/.test(phone.replace(/\s/g, ""));
   const canSubmit =
     name.trim() !== "" && phoneOk && address.trim() !== "" && monthly !== "" && kw !== "";
@@ -57,31 +59,29 @@ export default function NewStorePage() {
     }
   }
 
-  // --- Yaratilgandan keyingi ekran: taklif havolasi ---
+  // --- Yaratilgandan keyin: taklif havolasi ---
   if (created) {
     const link = created.invite_link;
     return (
       <div className="space-y-4">
-        <Notice tone="ok">✅ Magazin yaratildi: {created.store.name}</Notice>
+        <Notice tone="ok">Magazin yaratildi: {created.store.name}</Notice>
 
         <Card>
-          <p className="font-medium">Egasiga havola</p>
-          <p className="mt-1 mb-3 text-sm" style={{ color: "var(--tg-hint)" }}>
-            Shu havolani magazin egasiga yuboring. U bosganda bot ochiladi va
-            kontaktini ulashadi — raqam siz kiritgan{" "}
-            <code className="text-xs">{created.store.owner_phone}</code> bilan mos
-            kelishi kerak.
+          <p className="font-semibold">Egasiga havola</p>
+          <p className="mt-1 mb-3 text-sm text-muted">
+            Havolani magazin egasiga yuboring. U bosganda bot ochiladi va kontaktini
+            ulashadi — raqam siz kiritgan{" "}
+            <span className="nums text-text">{created.store.owner_phone}</span> bilan
+            mos kelishi kerak.
           </p>
 
           {link ? (
             <>
-              <div
-                className="mb-3 overflow-x-auto rounded-lg border px-3 py-2.5 text-xs"
-                style={{ borderColor: "var(--tg-border)", background: "var(--tg-card)" }}
-              >
+              <div className="mb-3 overflow-x-auto rounded-xl border border-line bg-bg px-3 py-2.5 text-xs">
                 <code className="whitespace-nowrap">{link}</code>
               </div>
               <Button
+                icon={copied ? <IconCheck size={18} /> : <IconCopy size={18} />}
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(link);
@@ -93,7 +93,7 @@ export default function NewStorePage() {
                   }
                 }}
               >
-                {copied ? "✓ Nusxa olindi" : "📋 Havoladan nusxa olish"}
+                {copied ? "Nusxa olindi" : "Havoladan nusxa olish"}
               </Button>
             </>
           ) : (
@@ -105,7 +105,10 @@ export default function NewStorePage() {
         </Card>
 
         <div className="space-y-2">
-          <Button tone="neutral" onClick={() => router.push(`/app/magazin/${created.store.id}`)}>
+          <Button
+            tone="neutral"
+            onClick={() => router.push(`/app/magazin/${created.store.id}`)}
+          >
             Magazinni ochish
           </Button>
           <Button
@@ -127,11 +130,14 @@ export default function NewStorePage() {
     );
   }
 
-  // --- Forma ---
   return (
     <div className="space-y-4">
-      <Link href="/app/admin" className="text-sm" style={{ color: "var(--tg-hint)" }}>
-        ← Boshqaruv
+      <Link
+        href="/app/admin"
+        className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 text-sm text-muted"
+      >
+        <IconArrowLeft size={18} />
+        Boshqaruv
       </Link>
       <h1 className="text-xl font-bold tracking-tight">Yangi magazin</h1>
 
@@ -151,9 +157,10 @@ export default function NewStorePage() {
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="+998941339383"
+          invalid={phoneTouched && !phoneOk}
           hint={
-            phone.length > 4 && !phoneOk
-              ? "⚠️ Format: +998 va 9 ta raqam"
+            phoneTouched && !phoneOk
+              ? "Format: +998 va 9 ta raqam"
               : "Egasi aynan shu raqamli kontaktni yuborishi kerak"
           }
           required
@@ -181,7 +188,7 @@ export default function NewStorePage() {
           value={kw}
           onValueChange={setKw}
           placeholder="4197"
-          hint="Hozirgi elektr hisoblagich raqami"
+          hint="Elektr hisoblagichning hozirgi raqami"
           required
         />
 
@@ -193,9 +200,9 @@ export default function NewStorePage() {
         />
 
         <Card>
-          <p className="text-sm" style={{ color: "var(--tg-hint)" }}>
-            Magazin yaratilganda <strong>birinchi oylik</strong> darhol qarzga
-            yoziladi, keyingilari esa har 30 kunda avtomatik qo&apos;shiladi.
+          <p className="text-sm text-muted">
+            Magazin yaratilganda <strong className="text-text">birinchi oylik</strong>{" "}
+            darhol qarzga yoziladi, keyingilari har 30 kunda avtomatik qo&apos;shiladi.
           </p>
         </Card>
 

@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { useSession } from "@/components/SessionProvider";
 import { Button, Notice, Textarea } from "@/components/form";
+import { IconArrowLeft, IconSend } from "@/components/icons";
 import { Card, ErrorBox } from "@/components/ui";
 import { ApiError, adminApi } from "@/lib/api";
 import { haptic } from "@/lib/telegram";
@@ -43,14 +44,18 @@ export default function BroadcastPage() {
 
   return (
     <div className="space-y-4">
-      <Link href="/app/admin" className="text-sm" style={{ color: "var(--tg-hint)" }}>
-        ← Boshqaruv
+      <Link
+        href="/app/admin"
+        className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 text-sm text-muted"
+      >
+        <IconArrowLeft size={18} />
+        Boshqaruv
       </Link>
       <h1 className="text-xl font-bold tracking-tight">Barchaga xabar</h1>
 
       <Card>
-        <p className="text-sm" style={{ color: "var(--tg-hint)" }}>
-          Xabar <strong>kontakt ulagan barcha {me.store_count > 0 ? "" : ""}
+        <p className="text-sm text-muted">
+          Xabar <strong className="text-text">kontakt ulagan barcha
           foydalanuvchilarga</strong> Telegram orqali yuboriladi. Yuborilgandan
           keyin qaytarib bo&apos;lmaydi.
         </p>
@@ -80,9 +85,13 @@ export default function BroadcastPage() {
         </Notice>
       )}
 
-      {/* Ikki bosqichli tasdiqlash — tasodifan yuborib yubormaslik uchun */}
+      {/* Ikki bosqich — tasodifan yuborib yubormaslik uchun */}
       {!confirming ? (
-        <Button disabled={!text.trim() || busy} onClick={() => setConfirming(true)}>
+        <Button
+          disabled={!text.trim() || busy}
+          onClick={() => setConfirming(true)}
+          icon={<IconSend size={18} />}
+        >
           Yuborishga tayyorlash
         </Button>
       ) : (

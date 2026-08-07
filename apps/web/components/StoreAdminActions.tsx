@@ -5,6 +5,15 @@ import { useState } from "react";
 
 import { Sheet } from "@/components/Sheet";
 import { Button, Input, NumberInput, Notice } from "@/components/form";
+import {
+  IconBolt,
+  IconCheck,
+  IconCopy,
+  IconLink,
+  IconMinus,
+  IconPencil,
+  IconTrash,
+} from "@/components/icons";
 import { Card } from "@/components/ui";
 import { ApiError, adminApi, type Store } from "@/lib/api";
 import { money, sum } from "@/lib/format";
@@ -24,18 +33,36 @@ export function StoreAdminActions({
   return (
     <>
       <div className="space-y-2">
-        <Button onClick={() => setPanel("payment")}>➖ To&apos;lov qabul qilish</Button>
-        <Button tone="neutral" onClick={() => setPanel("reading")}>
-          ⚡ Yangi hisoblagich ko&apos;rsatkichi
+        <Button onClick={() => setPanel("payment")} icon={<IconMinus size={18} />}>
+          To&apos;lov qabul qilish
         </Button>
-        <Button tone="neutral" onClick={() => setPanel("edit")}>
-          ✏️ Ma&apos;lumotlarni tahrirlash
+        <Button
+          tone="neutral"
+          onClick={() => setPanel("reading")}
+          icon={<IconBolt size={18} />}
+        >
+          Yangi hisoblagich ko&apos;rsatkichi
         </Button>
-        <Button tone="neutral" onClick={() => setPanel("invite")}>
-          🔗 Yangi taklif havolasi
+        <Button
+          tone="neutral"
+          onClick={() => setPanel("edit")}
+          icon={<IconPencil size={18} />}
+        >
+          Ma&apos;lumotlarni tahrirlash
         </Button>
-        <Button tone="danger" onClick={() => setPanel("delete")}>
-          🗑 Magazinni o&apos;chirish
+        <Button
+          tone="neutral"
+          onClick={() => setPanel("invite")}
+          icon={<IconLink size={18} />}
+        >
+          Yangi taklif havolasi
+        </Button>
+        <Button
+          tone="danger"
+          onClick={() => setPanel("delete")}
+          icon={<IconTrash size={18} />}
+        >
+          Magazinni o&apos;chirish
         </Button>
       </div>
 
@@ -105,8 +132,8 @@ function PaymentPanel({
     <Sheet open={open} onClose={close} title="To'lov qabul qilish">
       <div className="space-y-4">
         <Card>
-          <p className="text-sm" style={{ color: "var(--tg-hint)" }}>
-            Hozirgi qarz: <strong>{sum(debt)}</strong>
+          <p className="text-sm text-muted">
+            Hozirgi qarz: <strong className="nums text-text">{sum(debt)}</strong>
           </p>
         </Card>
 
@@ -160,9 +187,11 @@ function ReadingPanel({
     <Sheet open={open} onClose={close} title="Hisoblagich ko'rsatkichi">
       <div className="space-y-4">
         <Card>
-          <p className="text-sm" style={{ color: "var(--tg-hint)" }}>
+          <p className="text-sm text-muted">
             Oxirgi ko&apos;rsatkich:{" "}
-            <strong>{prev !== null ? `${money(prev)} kW` : "kiritilmagan"}</strong>
+            <strong className="nums text-text">
+              {prev !== null ? `${money(prev)} kW` : "kiritilmagan"}
+            </strong>
           </p>
         </Card>
 
@@ -174,7 +203,7 @@ function ReadingPanel({
           autoFocus
           hint={
             prev !== null && reading !== "" && value < prev
-              ? "⚠️ Oldingisidan kichik — hisoblagich orqaga qaytmaydi"
+              ? "Oldingisidan kichik — hisoblagich orqaga qaytmaydi"
               : delta !== null
                 ? `Iste'mol: ${money(delta)} kW` +
                   (price !== null ? ` = ${money(delta * price)} so'm` : "")
@@ -228,7 +257,7 @@ function EditPanel({
         />
 
         <Card>
-          <p className="text-xs" style={{ color: "var(--tg-hint)" }}>
+          <p className="text-xs text-muted">
             Telefon raqami tahrirlanmaydi — u magazin egasini aniqlash uchun
             ishlatiladi. Raqam noto&apos;g&apos;ri bo&apos;lsa, magazinni
             o&apos;chirib qaytadan yarating.
@@ -289,22 +318,21 @@ function InvitePanel({
     <Sheet open={open} onClose={close} title="Taklif havolasi">
       <div className="space-y-4">
         <Card>
-          <p className="text-sm" style={{ color: "var(--tg-hint)" }}>
-            Yangi havola yaratilganda <strong>eskisi bekor bo&apos;ladi</strong>.
-            Egasi havolani bosib, <code>{store.owner_phone}</code> raqamli
+          <p className="text-sm text-muted">
+            Yangi havola yaratilganda{" "}
+            <strong className="text-text">eskisi bekor bo&apos;ladi</strong>. Egasi
+            havolani bosib, <code className="nums">{store.owner_phone}</code> raqamli
             kontaktini yuborishi kerak.
           </p>
         </Card>
 
         {link && (
           <>
-            <div
-              className="overflow-x-auto rounded-lg border px-3 py-2.5 text-xs"
-              style={{ borderColor: "var(--tg-border)", background: "var(--tg-card)" }}
-            >
+            <div className="overflow-x-auto rounded-xl border border-line bg-surface px-3 py-2.5 text-xs">
               <code className="whitespace-nowrap">{link}</code>
             </div>
             <Button
+              icon={copied ? <IconCheck size={18} /> : <IconCopy size={18} />}
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(link);
@@ -315,7 +343,7 @@ function InvitePanel({
                 }
               }}
             >
-              {copied ? "✓ Nusxa olindi" : "📋 Nusxa olish"}
+              {copied ? "Nusxa olindi" : "Nusxa olish"}
             </Button>
           </>
         )}

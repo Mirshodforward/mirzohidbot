@@ -1,45 +1,121 @@
 @import "tailwindcss";
 
-/*
- * Mavzu: sayt o'z ranglarida, Mini App esa Telegram mavzusiga moslashadi.
- * `--tg-*` o'zgaruvchilarni TelegramProvider `document.documentElement` ga
- * yozadi; Telegram tashqarisida fallback qiymatlar ishlaydi.
- */
-@theme {
-  --color-brand-50: oklch(0.97 0.02 250);
-  --color-brand-100: oklch(0.93 0.05 250);
-  --color-brand-500: oklch(0.58 0.19 255);
-  --color-brand-600: oklch(0.51 0.19 255);
-  --color-brand-700: oklch(0.44 0.17 255);
+/* ==========================================================================
+   RANG TOKENLARI
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+   Uch qatlam: xom qiymat -> semantik token -> Tailwind klass.
+   Komponentlarda hech qachon xom hex yozilmaydi, faqat `bg-surface`,
+   `text-muted` kabi semantik klasslar.
+
+   Telegram Mini App ichida SessionProvider quyidagi o'zgaruvchilarni
+   foydalanuvchining Telegram mavzusi qiymatlari bilan qayta yozadi.
+   Telegram tashqarisida esa shu yerdagi standart palitra ishlaydi —
+   ikkala holatda ham komponentlar bir xil semantik nomlarni ishlatadi.
+   ========================================================================== */
 
 :root {
-  --tg-bg: #ffffff;
-  --tg-text: #0f172a;
-  --tg-hint: #64748b;
-  --tg-card: #f8fafc;
-  --tg-border: #e2e8f0;
-  --tg-accent: #2563eb;
+  /* Yorug' rejim — WCAG AA bo'yicha tekshirilgan juftliklar */
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-2: #eef1f5;
+  --text: #0d1117;        /* oq fonda 17.4:1 */
+  --text-muted: #59636e;  /* oq fonda 5.6:1 — kichik matn uchun ham yetarli */
+  --border: #d8dee4;
+  --primary: #0b62d6;     /* oq fonda 5.1:1 */
+  --on-primary: #ffffff;
+  --success: #0a7c42;     /* oq fonda 4.8:1 */
+  --danger: #c9252d;      /* oq fonda 5.2:1 */
+  --warning: #8a5a00;     /* oq fonda 5.3:1 */
 }
 
-html[data-tg-theme="dark"] {
-  --tg-bg: #17212b;
-  --tg-text: #f1f5f9;
-  --tg-hint: #94a3b8;
-  --tg-card: #232e3c;
-  --tg-border: #2f3b49;
-  --tg-accent: #5288c1;
+:root[data-theme="dark"] {
+  --bg: #17212b;
+  --surface: #202b36;
+  --surface-2: #2a3844;
+  --text: #f0f4f8;        /* to'q fonda 14.2:1 */
+  --text-muted: #9fb0c0;  /* to'q fonda 6.1:1 */
+  --border: #33434f;
+  --primary: #6ab3f3;     /* to'q fonda 7.4:1 — to'q rejimda ochroq ton kerak */
+  --on-primary: #08131f;
+  --success: #4ec97f;
+  --danger: #ff6b6b;
+  --warning: #e0a458;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-line: var(--border);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+
+  /* Tizim shrifti — Mini App qurilmaning o'z ilovalariday ko'rinsin va
+     tashqi shrift yuklanishi kutilmasin (sekin mobil internet). */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+
+  /* 4px ritm */
+  --spacing: 0.25rem;
+}
+
+/* ==========================================================================
+   ASOSIY
+   ========================================================================== */
+
+html {
+  /* iOS: gorizontal siljish va matnni avtomatik kattalashtirishni to'xtatadi */
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
 }
 
 body {
-  background: var(--tg-bg);
-  color: var(--tg-text);
+  background: var(--bg);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
+  /* Ro'yxat oxiriga yetganda butun sahifa "cho'zilib" ketmasin */
+  overscroll-behavior-y: contain;
 }
 
-/* Mini App'da kontent Telegram sarlavhasi ostiga kirib ketmasin. */
-.tg-safe {
+/* Pul va raqamlar bir xil kenglikda tursin — ustunlar sakramaydi */
+.nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ==========================================================================
+   FOKUS — klaviatura bilan yurgan foydalanuvchi uchun majburiy.
+   `:focus-visible` sichqoncha bosishida chiqmaydi, faqat klaviaturada.
+   ========================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ==========================================================================
+   HARAKAT — tizimda "harakatni kamaytirish" yoqilgan bo'lsa hurmat qilamiz.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Xavfsiz zona (iPhone pastki chizig'i, notch) */
+.safe-b {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

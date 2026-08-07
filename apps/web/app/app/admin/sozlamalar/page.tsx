@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { useSession } from "@/components/SessionProvider";
 import { Button, NumberInput, Notice } from "@/components/form";
+import { IconArrowLeft, IconCheck, IconLogout } from "@/components/icons";
 import { Card, ErrorBox, Row, Skeleton } from "@/components/ui";
 import { ApiError, adminApi, api, clearToken } from "@/lib/api";
 import { money } from "@/lib/format";
@@ -51,21 +52,25 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <Link href="/app/admin" className="text-sm" style={{ color: "var(--tg-hint)" }}>
-        ← Boshqaruv
+      <Link
+        href="/app/admin"
+        className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 text-sm text-muted"
+      >
+        <IconArrowLeft size={18} />
+        Boshqaruv
       </Link>
       <h1 className="text-xl font-bold tracking-tight">Sozlamalar</h1>
 
       <Card>
-        <p className="mb-3 font-medium">Tok narxi (hamma magazin uchun)</p>
+        <p className="mb-3 font-semibold">Tok narxi (hamma magazin uchun)</p>
 
         {current === undefined ? (
           <Skeleton className="h-12 w-full" />
         ) : (
           <>
-            <p className="mb-3 text-sm" style={{ color: "var(--tg-hint)" }}>
+            <p className="mb-3 text-sm text-muted">
               Hozirgi:{" "}
-              <strong>
+              <strong className="nums text-text">
                 {current === null ? "kiritilmagan" : `${money(current)} so'm / kW`}
               </strong>
             </p>
@@ -77,8 +82,12 @@ export default function SettingsPage() {
               hint="0 — tok pullik hisoblanmaydi"
             />
             <div className="mt-3">
-              <Button onClick={save} disabled={busy || price === ""}>
-                {busy ? "Saqlanmoqda…" : saved ? "✓ Saqlandi" : "Saqlash"}
+              <Button
+                onClick={save}
+                disabled={busy || price === ""}
+                icon={saved ? <IconCheck size={18} /> : undefined}
+              >
+                {busy ? "Saqlanmoqda…" : saved ? "Saqlandi" : "Saqlash"}
               </Button>
             </div>
           </>
@@ -91,17 +100,18 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
-        <p className="mb-2 font-medium">Hisob</p>
+        <p className="mb-1 font-semibold">Hisob</p>
         <Row label="Ism" value={me.full_name ?? "—"} />
         <Row label="Telefon" value={me.phone_number ?? "—"} />
         <Row label="Telegram ID" value={me.telegram_id ?? "—"} />
         <Row label="Rol" value="Admin" />
       </Card>
 
-      {/* Mini App'da chiqish tugmasi keraksiz — Telegram sessiyani o'zi boshqaradi */}
+      {/* Mini App'da chiqish keraksiz — sessiyani Telegram boshqaradi */}
       {!inTelegram && (
         <Button
           tone="neutral"
+          icon={<IconLogout size={18} />}
           onClick={async () => {
             try {
               await api.logout();

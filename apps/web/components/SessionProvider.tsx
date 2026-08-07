@@ -25,20 +25,26 @@ const SessionContext = createContext<SessionValue>({
 
 export const useSession = () => useContext(SessionContext);
 
-/** Telegram mavzusini CSS o'zgaruvchilarga ko'chiradi. */
+/**
+ * Telegram mavzusini semantik tokenlarga ko'chiradi.
+ *
+ * Faqat fon/matn/chegara olinadi. Telegram `button_color` ataylab
+ * ISHLATILMAYDI: ba'zi foydalanuvchi mavzularida u fon bilan yetarli
+ * kontrast bermaydi va tugma yozuvi o'qilmay qoladi. Asosiy rangimiz
+ * kontrasti tekshirilgan (globals.css), shuning uchun o'zimizniki qoladi.
+ */
 function applyTelegramTheme(): void {
   const wa = getWebApp();
   if (!wa) return;
   const root = document.documentElement;
-  root.dataset.tgTheme = wa.colorScheme;
+  root.dataset.theme = wa.colorScheme === "dark" ? "dark" : "light";
 
   const map: Record<string, string> = {
-    bg_color: "--tg-bg",
-    text_color: "--tg-text",
-    hint_color: "--tg-hint",
-    secondary_bg_color: "--tg-card",
-    section_separator_color: "--tg-border",
-    button_color: "--tg-accent",
+    bg_color: "--bg",
+    text_color: "--text",
+    hint_color: "--text-muted",
+    secondary_bg_color: "--surface",
+    section_separator_color: "--border",
   };
   for (const [tgKey, cssVar] of Object.entries(map)) {
     const value = wa.themeParams?.[tgKey];
