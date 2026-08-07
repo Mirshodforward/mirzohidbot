@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from enum import StrEnum
+from enum import Enum
 
 from aiogram import Bot
 from aiogram.exceptions import (
@@ -26,7 +26,8 @@ SEND_GAP_SEC = 0.05
 MAX_ATTEMPTS = 3
 
 
-class SendResult(StrEnum):
+# `StrEnum` emas: server Python 3.10 da ishlaydi (StrEnum 3.11+ da paydo bo'lgan).
+class SendResult(str, Enum):
     OK = "ok"
     BLOCKED = "blocked"  # bot bloklangan / chat yo'q — qayta urinish foydasiz
     FAILED = "failed"  # vaqtinchalik xato — keyingi urinishda yuborish mumkin

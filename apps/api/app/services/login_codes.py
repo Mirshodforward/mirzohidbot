@@ -7,7 +7,7 @@ Bu bepul va SMS'dan ishonchliroq.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,8 @@ from app.domain.store_flow import normalize_phone
 from app.services.tg_send import SendResult, send_message_safe
 
 logger = logging.getLogger(__name__)
+
+UTC = timezone.utc  # `datetime.UTC` 3.11+ — deploy serveri 3.10 da ishlaydi
 
 
 class LoginCodeError(Exception):

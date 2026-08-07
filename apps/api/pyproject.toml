@@ -2,13 +2,16 @@
 name = "mirzohid-api"
 version = "1.0.0"
 description = "Magazin ijarasi: Telegram bot + Mini App + sayt uchun umumiy API"
-requires-python = ">=3.12"
+# 3.10 — deploy serveri (Ubuntu 22.04) shu versiyada. Yangilash boshqa
+# 5 loyihaga tegib ketishi mumkin, shuning uchun kod 3.10 ga moslashtirilgan.
+requires-python = ">=3.10"
 
 [tool.ruff]
 # 120 — bot handlerlaridagi inline klaviatura ta'riflari uzun, ularni faqat
 # formatlash uchun qayta yozish ishlab turgan kodga keraksiz xavf qo'shadi.
 line-length = 120
-target-version = "py312"
+# py310 — aks holda ruff 3.11+ idiomalarini (StrEnum, datetime.UTC) taklif qiladi
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]

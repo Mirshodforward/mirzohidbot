@@ -11,6 +11,18 @@ const nextConfig: NextConfig = {
   // topib, standalone build'ga noto'g'ri fayllarni yig'adi.
   outputFileTracingRoot: path.join(__dirname),
 
+  images: {
+    // Loyihada `next/image` ishlatilmaydi. Bu bayroqsiz Next standalone
+    // build'ga `sharp` ning **build qilingan platformasi uchun** native
+    // binarisini qo'shadi — Windows'da build qilib Linuxga tashiganda u
+    // ishlamaydi. Optimizatsiya o'chirilgach sharp umuman kerak emas.
+    unoptimized: true,
+  },
+  // sharp'ni tracing'dan ham chiqaramiz — standalone 60 MB dan ~15 MB ga tushadi.
+  outputFileTracingExcludes: {
+    "*": ["node_modules/@img/**", "node_modules/sharp/**"],
+  },
+
   async rewrites() {
     // Brauzer /api/... ga uradi, Next uni FastAPI ga uzatadi. Shu tufayli
     // frontend va backend bitta origin: CORS va cookie muammosi yo'q.

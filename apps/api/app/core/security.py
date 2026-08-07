@@ -8,12 +8,15 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 
 import jwt
 
 from app.config import get_settings
+
+# `datetime.UTC` 3.11+ da paydo bo'lgan; deploy serveri 3.10 da ishlaydi.
+UTC = timezone.utc
 
 # initData shu muddatdan eski bo'lsa qabul qilinmaydi (replay hujumiga qarshi).
 INIT_DATA_MAX_AGE_SEC = 24 * 60 * 60
