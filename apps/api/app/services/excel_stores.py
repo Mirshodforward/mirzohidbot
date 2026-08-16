@@ -2,9 +2,52 @@ from datetime import datetime
 from io import BytesIO
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 
 from app.db.models import Store
 from app.domain.store_flow import TZ_TASHKENT, fmt_store_date
+
+_HEADER_FONT = Font(bold=True, color="FFFFFF")
+_HEADER_FILL = PatternFill(fill_type="solid", start_color="305496")
+_BODY_FONT = Font(color="000000")
+_BODY_FILL = PatternFill(fill_type="solid", start_color="FFFFFF")
+_THIN = Side(style="thin", color="BFBFBF")
+_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+
+
+def _style_sheet(ws: Worksheet) -> None:
+    """Rang va fillarni har bir katakka aniq yozamiz.
+
+    Fill berilmagan katakni ba'zi telefon ko'ruvchilari (to'q rejimda) qora fon
+    bilan chizadi, yozuv esa qora — jadval umuman ko'rinmay qoladi.
+    """
+    sum_cols: set[int] = set()
+    for cell in ws[1]:
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
+        cell.border = _BORDER
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        if isinstance(cell.value, str) and "so'm" in cell.value:
+            sum_cols.add(cell.column)
+
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = _BODY_FONT
+            cell.fill = _BODY_FILL
+            cell.border = _BORDER
+            if cell.column in sum_cols and isinstance(cell.value, int):
+                cell.number_format = "#,##0"
+
+    for col_idx in range(1, ws.max_column + 1):
+        letter = get_column_letter(col_idx)
+        longest = max(
+            (len(str(c.value)) for c in ws[letter] if c.value is not None), default=0
+        )
+        ws.column_dimensions[letter].width = min(max(longest + 2, 10), 40)
+
+    ws.freeze_panes = "A2"
 
 
 def stores_to_xlsx_bytes(
@@ -28,6 +71,7 @@ def stores_to_xlsx_bytes(
             "Tok qarz / oxirgi +kW",
             "Umumiy tok narxi (so'm/kW)",
             "Tok to'lov (so'm)",
+            "Jami qarz (so'm)",
             "Yaratilgan",
         ]
     )
@@ -38,6 +82,7 @@ def stores_to_xlsx_bytes(
         tok_pay = ""
         if global_tok_price_per_kw is not None:
             tok_pay = int(s.debt_tok or 0) * int(global_tok_price_per_kw)
+        total_debt = int(s.debt_balance or 0) + (tok_pay if isinstance(tok_pay, int) else 0)
         ws.append(
             [
                 s.id,
@@ -51,10 +96,12 @@ def stores_to_xlsx_bytes(
                 int(s.debt_tok or 0),
                 int(global_tok_price_per_kw) if global_tok_price_per_kw is not None else "",
                 tok_pay,
+                total_debt,
                 created,
             ]
         )
 
+    _style_sheet(ws)
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
@@ -94,6 +141,7 @@ def admin_report_xlsx_bytes(
             "Tok qarz / oxirgi +kW",
             "Umumiy tok narxi (so'm/kW)",
             "Tok to'lov (so'm)",
+            "Jami qarz (so'm)",
             "Yaratilgan",
         ]
     )
@@ -104,6 +152,7 @@ def admin_report_xlsx_bytes(
         tok_pay = ""
         if global_tok_price_per_kw is not None:
             tok_pay = int(s.debt_tok or 0) * int(global_tok_price_per_kw)
+        total_debt = int(s.debt_balance or 0) + (tok_pay if isinstance(tok_pay, int) else 0)
         ws1.append(
             [
                 s.id,
@@ -117,6 +166,7 @@ def admin_report_xlsx_bytes(
                 int(s.debt_tok or 0),
                 int(global_tok_price_per_kw) if global_tok_price_per_kw is not None else "",
                 tok_pay,
+                total_debt,
                 created,
             ]
         )
@@ -168,6 +218,8 @@ def admin_report_xlsx_bytes(
             ]
         )
 
+    for sheet in (ws1, ws2, ws3):
+        _style_sheet(sheet)
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
@@ -213,6 +265,7 @@ def single_store_electricity_excel_bytes(
             ]
         )
 
+    _style_sheet(ws)
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
@@ -252,6 +305,7 @@ def single_store_debt_payments_excel_bytes(
             ]
         )
 
+    _style_sheet(ws)
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
