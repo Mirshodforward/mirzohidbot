@@ -312,11 +312,15 @@ async def stats(admin: AdminDep, session: SessionDep) -> dict:
         )
         or 0
     )
-    total_debt = await session.scalar(select(func.coalesce(func.sum(Store.debt_balance), 0)))
+    total_rent = await session.scalar(select(func.coalesce(func.sum(Store.debt_balance), 0)))
+    # Jami qarz = oylik qarzlar + tok qarzi (iste'mol × narx), web'dagi hisob bilan bir xil
+    total_tok_kw = await session.scalar(select(func.coalesce(func.sum(Store.debt_tok), 0)))
+    price = await get_electricity_price_per_kw()
+    total_debt = int(total_rent or 0) + int(total_tok_kw or 0) * int(price or 0)
     return {
         "stores": stores,
         "users": users,
         "linked_users": linked,
-        "total_debt": int(total_debt or 0),
+        "total_debt": total_debt,
         "generated_at": datetime.now().isoformat(),
     }

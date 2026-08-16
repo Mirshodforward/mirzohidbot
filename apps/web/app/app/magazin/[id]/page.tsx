@@ -71,7 +71,10 @@ export default function StorePage({ params }: { params: Promise<{ id: string }> 
   if (error) return <ErrorBox message={error} />;
   if (!store) return null;
 
-  const debt = store.debt_balance ?? 0;
+  // Joriy qarz ikki qismdan iborat: oylik (debt_balance) + tok (iste'mol × narx)
+  const rentDebt = store.debt_balance ?? 0;
+  const tokDebt = store.electricity_due ?? 0;
+  const debt = rentDebt + tokDebt;
   const left = daysUntil(store.next_payment_at);
 
   return (
@@ -98,6 +101,10 @@ export default function StorePage({ params }: { params: Promise<{ id: string }> 
         <p className={`nums mt-1 text-2xl font-bold ${debt > 0 ? "text-danger" : ""}`}>
           {sum(debt)}
         </p>
+        <div className="mt-2 border-t border-line">
+          <Row label="Oylik" value={sum(rentDebt)} />
+          <Row label="Tok qarz" value={sum(tokDebt)} />
+        </div>
         {store.next_payment_at && (
           <p className="mt-1 text-xs text-muted">
             Keyingi to&apos;lov {date(store.next_payment_at)}

@@ -44,8 +44,10 @@ export default function StoresPage() {
   if (error) return <ErrorBox message={error} />;
 
   const isAdmin = Boolean(me?.is_admin);
-  const totalDebt = stores?.reduce((acc, s) => acc + (s.debt_balance ?? 0), 0) ?? 0;
-  const indebted = stores?.filter((s) => (s.debt_balance ?? 0) > 0).length ?? 0;
+  // Qarz = oylik + tok (magazin sahifasidagi "Joriy qarz" bilan bir xil hisob)
+  const debtOf = (s: Store) => (s.debt_balance ?? 0) + (s.electricity_due ?? 0);
+  const totalDebt = stores?.reduce((acc, s) => acc + debtOf(s), 0) ?? 0;
+  const indebted = stores?.filter((s) => debtOf(s) > 0).length ?? 0;
 
   return (
     <div className="space-y-4">
@@ -108,7 +110,7 @@ export default function StoresPage() {
 }
 
 function StoreCard({ store }: { store: Store }) {
-  const debt = store.debt_balance ?? 0;
+  const debt = (store.debt_balance ?? 0) + (store.electricity_due ?? 0);
   const left = daysUntil(store.next_payment_at);
 
   // Muddat yaqinlashgani ogohlantirish darajasini belgilaydi
