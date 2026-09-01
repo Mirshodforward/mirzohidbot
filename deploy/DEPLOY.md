@@ -8,7 +8,7 @@ Bu serverda:
   boshqa loyihalarga (kinobot, paymee, premiumtg, xprem) xizmat qilmoqda.
   `docker-compose.yml` dagi Caddy konteyneri port band bo'lgani uchun
   ko'tarilmaydi — ko'tarilsa esa o'sha saytlarni buzadi.
-* **PostgreSQL native o'rnatilgan va `mirzohid_db` ichida real ma'lumot bor.**
+* **PostgreSQL native o'rnatilgan va `mirzohid_v2_db` ichida real ma'lumot bor.**
   Bazani konteynerga ko'chirish keraksiz xavf.
 * Disk 24 GB dan 72% band (~6.7 GB bo'sh), xotira 70%, swap 36%.
   Docker daemon + image'lar bu yerda qimmatga tushadi.
@@ -29,14 +29,14 @@ sudo ss -tlnp | grep -E ':(8801|3801)\b' || echo "ikkala port ham bo'sh"
 
 ```bash
 sudo -u postgres psql -c "\l" | grep mirzohid
-sudo -u postgres psql -d mirzohid_db -c "\dt"
-sudo -u postgres psql -d mirzohid_db -c \
+sudo -u postgres psql -d mirzohid_v2_db -c "\dt"
+sudo -u postgres psql -d mirzohid_v2_db -c \
   "SELECT (SELECT count(*) FROM stores) AS magazinlar,
           (SELECT count(*) FROM users)  AS foydalanuvchilar;"
 
 # ZAXIRA — migratsiyadan oldin majburiy
-sudo -u postgres pg_dump mirzohid_db > /root/mirzohid_db_$(date +%F_%H%M).sql
-ls -lh /root/mirzohid_db_*.sql
+sudo -u postgres pg_dump mirzohid_v2_db > /root/mirzohid_v2_db_$(date +%F_%H%M).sql
+ls -lh /root/mirzohid_v2_db_*.sql
 ```
 
 ## 1. Foydalanuvchi va kod
@@ -61,7 +61,7 @@ sudo chmod 600 /opt/mirzohid/.env
 To'ldirish kerak:
 
 ```ini
-DATABASE_URL=postgresql+asyncpg://miniuser:YANGI_PAROL@localhost:5432/mirzohid_db
+DATABASE_URL=postgresql+asyncpg://miniuser:YANGI_PAROL@localhost:5432/mirzohid_v2_db
 BOT_TOKEN=<bot tokeni>
 ADMIN_IDS=<telegram id lar, vergul bilan>
 
@@ -194,7 +194,7 @@ sudo systemctl restart mirzohid-api mirzohid-web
 
 ```bash
 sudo systemctl stop mirzohid-api mirzohid-web
-sudo -u postgres psql -d mirzohid_db < /root/mirzohid_db_<sana>.sql
+sudo -u postgres psql -d mirzohid_v2_db < /root/mirzohid_v2_db_<sana>.sql
 # eski botni qayta yoqing
 ```
 
@@ -215,8 +215,8 @@ Shuning uchun Mirzohid uchun alohida rol ochildi:
 
 ```sql
 CREATE ROLE mirzohid_app LOGIN PASSWORD '<tasodifiy 32 belgi>';
-GRANT CONNECT ON DATABASE mirzohid_db TO mirzohid_app;
--- mirzohid_db ichida:
+GRANT CONNECT ON DATABASE mirzohid_v2_db TO mirzohid_app;
+-- mirzohid_v2_db ichida:
 GRANT USAGE, CREATE ON SCHEMA public TO mirzohid_app;
 GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO mirzohid_app;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO mirzohid_app;
@@ -224,7 +224,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO mirzohid_app
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO mirzohid_app;
 ```
 
-Bu rol faqat `mirzohid_db` ni ko'radi — boshqa 8 ta bazaga kira olmaydi.
+Bu rol faqat `mirzohid_v2_db` ni ko'radi — boshqa 8 ta bazaga kira olmaydi.
 
 ### 2. Frontend LOKAL build qilinadi, serverda emas
 
