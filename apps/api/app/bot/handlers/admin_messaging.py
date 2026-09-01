@@ -109,17 +109,23 @@ async def _thread_messages(session, store_id: int) -> list[StoreChatMessage]:
     return list(r.scalars().all())
 
 
-async def _owner_telegram_ids(session, owner_phone: str | None) -> list[int]:
-    raw = (owner_phone or "").strip()
-    if not raw:
-        return []
-    key = normalize_phone(raw) or raw
-    r = await session.execute(
-        select(User.telegram_id).where(
-            or_(User.phone_number == key, User.phone_number == raw)
+async def _owner_telegram_ids(session, store: Store) -> list[int]:
+    """Egani topish: to'g'ridan-to'g'ri bog'langan Telegram ID (havola orqali)
+    va/yoki telefon raqami mos keladigan foydalanuvchilar — telefon shart emas."""
+    ids: set[int] = set()
+    if store.owner_telegram_id:
+        ids.add(store.owner_telegram_id)
+
+    raw = (store.owner_phone or "").strip()
+    if raw:
+        key = normalize_phone(raw) or raw
+        r = await session.execute(
+            select(User.telegram_id).where(
+                or_(User.phone_number == key, User.phone_number == raw)
+            )
         )
-    )
-    return [row[0] for row in r.all()]
+        ids.update(row[0] for row in r.all())
+    return list(ids)
 
 
 @router.message(StateFilter(default_state), F.text == ADMIN_BTN_MSG)
@@ -381,7 +387,7 @@ async def admin_to_store_commit(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
         msgs = await _thread_messages(session, sid)
-        uids = await _owner_telegram_ids(session, s.owner_phone)
+        uids = await _owner_telegram_ids(session, s)
 
     header = (
         f"🏬 <b>{html.escape((s.name or '').strip() or '—')}</b> "

@@ -35,9 +35,16 @@ class Store(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Telefon ixtiyoriy: berilgan bo'lsa aniqlik uchun ishlatiladi, lekin
+    # bog'lanish uchun shart emas — pastdagi owner_telegram_id kifoya qiladi.
     owner_phone: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Magazin egasiga yuboriladigan /start havolasi (inv_...), bir marta ulangach tozalanadi
     owner_invite_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    # Egani to'g'ridan-to'g'ri Telegram ID orqali bog'lash (telefon mos kelmasa/
+    # kiritilmasa ham) — invite havolasi (=magazin ID) orqali ulanganda yoziladi.
+    owner_telegram_id: Mapped[int | None] = mapped_column(
+        BigInteger(), nullable=True, index=True
+    )
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     store_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     monthly_amount: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)

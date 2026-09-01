@@ -60,12 +60,16 @@ async def _out(store: Store) -> StoreOut:
 async def create_store(
     payload: StoreCreateIn, admin: AdminDep, session: SessionDep
 ) -> StoreCreatedOut:
-    phone = normalize_phone(payload.owner_phone)
-    if not phone:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Telefon formati noto'g'ri. Masalan: +998941339383",
-        )
+    # Telefon ixtiyoriy: berilsa formatini tekshiramiz, berilmasa bo'sh qoldiramiz —
+    # egasi taklif havolasi (=magazin ID) orqali Telegram ID bilan bog'lanadi.
+    phone: str | None = None
+    if payload.owner_phone:
+        phone = normalize_phone(payload.owner_phone)
+        if not phone:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Telefon formati noto'g'ri. Masalan: +998941339383",
+            )
 
     invite = new_invite_start_arg()
     store = Store(

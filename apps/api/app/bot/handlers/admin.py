@@ -14,11 +14,13 @@ from app.bot.formatting.store_invite import new_invite_start_arg, telegram_me_li
 from app.bot.keyboards import (
     ADMIN_BTN_NEW,
     ADMIN_BTN_REPORT,
+    ADMIN_BTN_SKIP_PHONE,
     ADMIN_BTN_TOK_PRICE,
     ALL_MENU_TEXTS,
     BTN_CANCEL,
     admin_main_menu,
     cancel_keyboard,
+    phone_step_keyboard,
     store_date_keyboard,
 )
 from app.bot.states import AddStoreStates, AdminTokPriceStates
@@ -85,8 +87,11 @@ async def add_store_begin(message: Message, state: FSMContext) -> None:
     await state.set_state(AddStoreStates.owner_phone)
     await message.answer(
         "Magazin egasining telefon raqamini yuboring.\n"
-        "Format: <code>+998941339383</code> (9 raqam, +998 bilan)",
-        reply_markup=cancel_keyboard(),
+        "Format: <code>+998941339383</code> (9 raqam, +998 bilan)\n\n"
+        "Telefon ixtiyoriy — bilmasangiz yoki keyin kiritmoqchi bo'lsangiz "
+        "pastdagi tugmadan o'tkazib yuboring. Bu holda egasi taklif havolasi "
+        "(=magazin ID) orqali to'g'ridan-to'g'ri bog'lanadi.",
+        reply_markup=phone_step_keyboard(),
     )
 
 
@@ -136,17 +141,25 @@ async def add_store_date_manual(callback: CallbackQuery, state: FSMContext) -> N
         )
 
 
+@router.message(AddStoreStates.owner_phone, F.text == ADMIN_BTN_SKIP_PHONE)
+async def add_store_owner_phone_skip(message: Message, state: FSMContext) -> None:
+    await state.update_data(owner_phone=None)
+    await state.set_state(AddStoreStates.name)
+    await message.answer("Magazin nomini yozing:", reply_markup=cancel_keyboard())
+
+
 @router.message(AddStoreStates.owner_phone, F.text)
 async def add_store_owner_phone(message: Message, state: FSMContext) -> None:
     phone = normalize_phone(message.text or "")
     if not phone:
         await message.answer(
-            "Noto'g'ri format. Masalan: <code>+998941339383</code> yoki <code>941339383</code>",
+            "Noto'g'ri format. Masalan: <code>+998941339383</code> yoki "
+            "<code>941339383</code> — yoki tugma orqali o'tkazib yuboring.",
         )
         return
     await state.update_data(owner_phone=phone)
     await state.set_state(AddStoreStates.name)
-    await message.answer("Magazin nomini yozing:")
+    await message.answer("Magazin nomini yozing:", reply_markup=cancel_keyboard())
 
 
 @router.message(AddStoreStates.name, F.text)
@@ -228,12 +241,13 @@ async def add_store_kw_finish(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     name = data.get("name")
+    # Ixtiyoriy — berilmagan bo'lishi mumkin, shuning uchun majburiylar ro'yxatida emas.
     owner_phone = data.get("owner_phone")
     address = data.get("address")
     store_date_raw = data.get("store_date")
     monthly_amount = data.get("monthly_amount")
 
-    if not all([name, owner_phone, address, store_date_raw, monthly_amount is not None]):
+    if not all([name, address, store_date_raw, monthly_amount is not None]):
         await state.clear()
         await message.answer("Sessiya buzildi. Qaytadan boshlang.", reply_markup=admin_main_menu())
         return
@@ -260,14 +274,20 @@ async def add_store_kw_finish(message: Message, state: FSMContext) -> None:
 
     me = await message.bot.get_me()
     uname = (me.username or "").strip()
+    bind_note = (
+        "yuborilgan raqam admin kiritgan telefon bilan mos bo'lishi kerak "
+        "(mos kelmasa ham havola orqali ulanish tugmasi chiqadi)."
+        if owner_phone
+        else "telefon so'ralganda \"Raqamsiz ulash\" tugmasini bossin — "
+        "havolaning o'zi (=magazin ID) yetarli."
+    )
     link_line = ""
     if uname:
         link = telegram_me_link(uname, invite_arg)
         link_line = (
             f"\n\n🔗 <b>Magazin egasiga havola</b> (nusxa olib yuboring):\n"
             f'<a href="{html.escape(link)}">{html.escape(link)}</a>\n\n'
-            "Egachi havolani bosganda bot ochiladi va kontakt ulashadi — "
-            "yuborilgan raqam admin kiritgan telefon bilan mos bo'lishi kerak."
+            f"Egachi havolani bosganda bot ochiladi — {bind_note}"
         )
     else:
         link_line = (
@@ -279,7 +299,7 @@ async def add_store_kw_finish(message: Message, state: FSMContext) -> None:
     await message.answer(
         "✅ Magazin yaratildi.\n\n"
         f"📛 {name}\n"
-        f"📞 {owner_phone}\n"
+        f"📞 {owner_phone or '— (kiritilmagan)'}\n"
         f"📍 {address}\n"
         f"📅 {fmt_store_date(store_date)}\n"
         f"💰 Oylik: {fmt_money(int(monthly_amount))} so'm\n"

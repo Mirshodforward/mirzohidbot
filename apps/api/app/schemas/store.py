@@ -13,6 +13,7 @@ class StoreOut(BaseModel):
     description: str | None = None
     address: str | None = None
     owner_phone: str | None = None
+    owner_telegram_id: int | None = None
     store_date: datetime | None = None
     monthly_amount: int | None = None
     electricity_kw: int | None = None
@@ -28,7 +29,9 @@ class StoreOut(BaseModel):
 
 class StoreCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    owner_phone: str = Field(pattern=PHONE_RE.pattern)
+    # Ixtiyoriy: berilmasa magazin egasi taklif havolasi (=magazin ID) orqali
+    # to'g'ridan-to'g'ri Telegram ID bilan bog'lanadi, telefon shart emas.
+    owner_phone: str | None = Field(default=None, pattern=PHONE_RE.pattern)
     address: str = Field(min_length=1)
     monthly_amount: int = Field(ge=0)
     electricity_kw: int = Field(ge=0)

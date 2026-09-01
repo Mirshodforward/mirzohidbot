@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import is_admin as is_admin_id
@@ -93,6 +93,19 @@ async def require_admin(user: CurrentUserDep) -> CurrentUser:
 AdminDep = Annotated[CurrentUser, Depends(require_admin)]
 
 
+def _user_owns_store(user: CurrentUser, store: Store) -> bool:
+    """Ikki mustaqil mezon: Telegram ID (invite havolasi orqali bog'langan)
+    yoki telefon raqami mos kelishi — biri yetarli, telefon shart emas."""
+    if user.telegram_id and store.owner_telegram_id == user.telegram_id:
+        return True
+    if user.phone_number and store.owner_phone:
+        mine = normalize_phone(user.phone_number) or user.phone_number.strip()
+        theirs = normalize_phone(store.owner_phone) or store.owner_phone.strip()
+        if mine == theirs:
+            return True
+    return False
+
+
 async def owned_store(store_id: int, user: CurrentUserDep, session: SessionDep) -> Store:
     """Magazinni qaytaradi; admin — hammasini, egasi — faqat o'zinikini."""
     store = await session.get(Store, store_id)
@@ -100,12 +113,7 @@ async def owned_store(store_id: int, user: CurrentUserDep, session: SessionDep) 
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Magazin topilmadi.")
     if user.is_admin:
         return store
-
-    if not user.phone_number or not store.owner_phone:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bu magazin sizga tegishli emas.")
-    mine = normalize_phone(user.phone_number) or user.phone_number.strip()
-    theirs = normalize_phone(store.owner_phone) or store.owner_phone.strip()
-    if mine != theirs:
+    if not _user_owns_store(user, store):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Bu magazin sizga tegishli emas.")
     return store
 
@@ -114,8 +122,13 @@ OwnedStoreDep = Annotated[Store, Depends(owned_store)]
 
 
 async def user_store_ids(user: CurrentUser, session: AsyncSession) -> list[int]:
-    if not user.phone_number:
+    conditions = []
+    if user.telegram_id:
+        conditions.append(Store.owner_telegram_id == user.telegram_id)
+    if user.phone_number:
+        key = normalize_phone(user.phone_number) or user.phone_number.strip()
+        conditions.append(Store.owner_phone == key)
+    if not conditions:
         return []
-    key = normalize_phone(user.phone_number) or user.phone_number.strip()
-    rows = await session.execute(select(Store.id).where(Store.owner_phone == key))
+    rows = await session.execute(select(Store.id).where(or_(*conditions)))
     return [r[0] for r in rows.all()]

@@ -31,8 +31,11 @@ export default function NewStorePage() {
   if (loading) return null;
   if (!me?.is_admin) return <ErrorBox message="Bu bo'lim faqat admin uchun." />;
 
-  const phoneTouched = phone.length > 4;
-  const phoneOk = /^\+998\d{9}$/.test(phone.replace(/\s/g, ""));
+  // Telefon ixtiyoriy: bo'sh yoki hali to'ldirilmagan "+998" holati ham valid.
+  const phoneDigits = phone.replace(/\s/g, "");
+  const phoneEmpty = phoneDigits === "" || phoneDigits === "+998";
+  const phoneTouched = !phoneEmpty;
+  const phoneOk = phoneEmpty || /^\+998\d{9}$/.test(phoneDigits);
   const canSubmit =
     name.trim() !== "" && phoneOk && address.trim() !== "" && monthly !== "" && kw !== "";
 
@@ -43,7 +46,7 @@ export default function NewStorePage() {
     try {
       const out = await adminApi.createStore({
         name: name.trim(),
-        owner_phone: phone.replace(/\s/g, ""),
+        owner_phone: phoneEmpty ? undefined : phoneDigits,
         address: address.trim(),
         monthly_amount: Number(monthly),
         electricity_kw: Number(kw),
@@ -69,10 +72,21 @@ export default function NewStorePage() {
         <Card>
           <p className="font-semibold">Egasiga havola</p>
           <p className="mt-1 mb-3 text-sm text-muted">
-            Havolani magazin egasiga yuboring. U bosganda bot ochiladi va kontaktini
-            ulashadi — raqam siz kiritgan{" "}
-            <span className="nums text-text">{created.store.owner_phone}</span> bilan
-            mos kelishi kerak.
+            {created.store.owner_phone ? (
+              <>
+                Havolani magazin egasiga yuboring. U bosganda bot ochiladi va
+                kontaktini ulashadi — raqam siz kiritgan{" "}
+                <span className="nums text-text">{created.store.owner_phone}</span>{" "}
+                bilan mos kelishi kerak (mos kelmasa ham, havola orqali
+                raqamsiz ulanish tugmasi chiqadi).
+              </>
+            ) : (
+              <>
+                Telefon kiritilmagan. Havolani magazin egasiga yuboring — u
+                bosgan zahoti (hech narsa so&apos;ralmasdan) shu magazinga
+                bog&apos;lanadi.
+              </>
+            )}
           </p>
 
           {link ? (
@@ -151,7 +165,7 @@ export default function NewStorePage() {
         />
 
         <Input
-          label="Egasining telefoni"
+          label="Egasining telefoni (ixtiyoriy)"
           type="tel"
           inputMode="tel"
           value={phone}
@@ -161,9 +175,8 @@ export default function NewStorePage() {
           hint={
             phoneTouched && !phoneOk
               ? "Format: +998 va 9 ta raqam"
-              : "Egasi aynan shu raqamli kontaktni yuborishi kerak"
+              : "Bo'sh qoldirsangiz ham bo'ladi — egasi taklif havolasi (=magazin ID) orqali to'g'ridan-to'g'ri bog'lanadi"
           }
-          required
         />
 
         <Input

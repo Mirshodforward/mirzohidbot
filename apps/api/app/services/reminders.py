@@ -30,17 +30,23 @@ from app.services.tg_send import SEND_GAP_SEC, SendResult, send_message_safe
 logger = logging.getLogger(__name__)
 
 
-async def _owner_telegram_ids(session, owner_phone: str) -> list[int]:
-    raw = (owner_phone or "").strip()
-    if not raw:
-        return []
-    key = normalize_phone(raw) or raw
-    r = await session.execute(
-        select(User.telegram_id).where(
-            or_(User.phone_number == key, User.phone_number == raw)
+async def _owner_telegram_ids(session, store: Store) -> list[int]:
+    """Egani topish: to'g'ridan-to'g'ri bog'langan Telegram ID (havola orqali)
+    va/yoki telefon raqami mos keladigan foydalanuvchilar — telefon shart emas."""
+    ids: set[int] = set()
+    if store.owner_telegram_id:
+        ids.add(store.owner_telegram_id)
+
+    raw = (store.owner_phone or "").strip()
+    if raw:
+        key = normalize_phone(raw) or raw
+        r = await session.execute(
+            select(User.telegram_id).where(
+                or_(User.phone_number == key, User.phone_number == raw)
+            )
         )
-    )
-    return [row[0] for row in r.all()]
+        ids.update(row[0] for row in r.all())
+    return list(ids)
 
 
 def _reminder_text(
@@ -118,9 +124,9 @@ async def send_due_reminders(bot: Bot, *, enforce_hour: bool = False) -> int:
                 if last_tz.date() == today:
                     continue
 
-            if not s.owner_phone:
+            if not s.owner_phone and not s.owner_telegram_id:
                 logger.warning(
-                    "Eslatma yuborilmadi: magazin #%s (%s) — egasining telefoni yo'q.",
+                    "Eslatma yuborilmadi: magazin #%s (%s) — egasi hali botga ulanmagan.",
                     s.id,
                     s.name,
                 )
@@ -130,14 +136,13 @@ async def send_due_reminders(bot: Bot, *, enforce_hour: bool = False) -> int:
             if not eligible or not due_dt or not phase:
                 continue
 
-            uids = await _owner_telegram_ids(session, s.owner_phone)
+            uids = await _owner_telegram_ids(session, s)
             if not uids:
                 logger.warning(
-                    "Eslatma yuborilmadi: magazin #%s (%s) — %s raqamli egasi "
-                    "botda kontakt ulamagan.",
+                    "Eslatma yuborilmadi: magazin #%s (%s) — egasi botda "
+                    "kontakt/havola orqali hali ulanmagan.",
                     s.id,
                     s.name,
-                    s.owner_phone,
                 )
                 continue
 

@@ -5,8 +5,8 @@ from aiogram.enums import ParseMode
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state
-from aiogram.types import CallbackQuery, Message
-from sqlalchemy import select
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import or_, select
 
 from app.bot.formatting.store_chat_format import format_store_thread_html
 from app.bot.formatting.store_format import store_card_html
@@ -29,6 +29,79 @@ from app.domain.store_flow import normalize_phone
 from app.services.tg_send import SendResult, send_message_safe
 
 router = Router(name="user")
+
+# Telefon mos kelmasa/berilmagan bo'lsa ham — havolaning o'zi (=magazin ID)
+# orqali to'g'ridan-to'g'ri bog'lanish imkoniyati.
+INVITE_SKIP_CALLBACK = "invite_skip"
+
+
+def invite_skip_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔓 Raqamsiz ulash", callback_data=INVITE_SKIP_CALLBACK)]
+        ]
+    )
+
+
+async def send_linked_stores_message(message: Message, telegram_id: int, head: str) -> None:
+    """Bog'langandan keyin (yoki 'Meni magazinim' so'ralganda) egasining
+    magazin(lar)ini bitta yoki bir nechta xabarda yuboradi."""
+    stores = await load_user_stores(telegram_id)
+    if stores:
+        head += "\n\n🏪 <b>Sizning magazingiz</b>"
+    tok_p = await get_electricity_price_per_kw()
+    parts: list[str] = []
+    cur = head
+    for s in stores:
+        block = "\n\n" + store_card_html(s, show_payment=True, tok_price_per_kw=tok_p)
+        if len(cur) + len(block) > 3800:
+            parts.append(cur)
+            cur = block.lstrip("\n")
+        else:
+            cur += block
+    parts.append(cur)
+    for i, p in enumerate(parts):
+        last = i == len(parts) - 1
+        await message.answer(
+            p,
+            parse_mode=ParseMode.HTML,
+            reply_markup=user_main_menu() if last else None,
+        )
+    if stores:
+        kb = miniapp_inline_keyboard(is_admin=False)
+        if kb:
+            await message.answer(
+                "📱 Magazin ma'lumotlari, to'lov tarixi va admin bilan suhbat "
+                "— ilovada qulayroq:",
+                reply_markup=kb,
+            )
+
+
+async def link_store_by_telegram_id(
+    store_id: int, token: str, telegram_id: int, username: str | None, full_name: str | None
+) -> Store | None:
+    """Havola (=magazin ID) orqali to'g'ridan-to'g'ri bog'lash — telefon shart emas.
+
+    Havola hali yaroqli bo'lsa Store'ni qaytaradi, aks holda None.
+    """
+    async with async_session_maker() as session:
+        st = await session.get(Store, store_id)
+        if not st or st.owner_invite_token != token:
+            return None
+        st.owner_telegram_id = telegram_id
+        st.owner_invite_token = None
+
+        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+        row = result.scalar_one_or_none()
+        if row:
+            row.username = username
+            row.full_name = full_name
+        else:
+            session.add(User(telegram_id=telegram_id, username=username, full_name=full_name))
+
+        await session.commit()
+        await session.refresh(st)
+        return st
 
 
 async def _user_owns_store(telegram_id: int, store_id: int) -> bool:
@@ -68,10 +141,14 @@ async def on_contact_invite_link(message: Message, state: FSMContext) -> None:
         expected_key = normalize_phone(st.owner_phone or "") or (st.owner_phone or "").strip()
         contact_key = normalized if normalized else phone_to_save.strip()
         if not expected_key or contact_key != expected_key:
+            # Mos kelmadi — telefon endi majburiy emas, havola (=magazin ID)
+            # orqali ham ulanish mumkinligini eslatamiz.
             await message.answer(
                 f"Bu magazin uchun kutilayotgan raqam: <code>{html.escape(st.owner_phone or '—')}</code>.\n"
-                "Iltimos, aynan shu raqamli kontaktni yuboring.",
+                "Iltimos, aynan shu raqamli kontaktni yuboring — yoki pastdagi "
+                "tugma orqali raqamsiz ulaning.",
                 parse_mode=ParseMode.HTML,
+                reply_markup=invite_skip_keyboard(),
             )
             return
 
@@ -92,70 +169,78 @@ async def on_contact_invite_link(message: Message, state: FSMContext) -> None:
                     phone_number=phone_to_save,
                 )
             )
+        st.owner_telegram_id = message.from_user.id
         st.owner_invite_token = None
         await session.commit()
 
     await state.clear()
     await refresh_all_store_rent_state()
-    stores: list[Store] = []
-    if normalized:
-        async with async_session_maker() as session:
-            q = await session.execute(
-                select(Store)
-                .where(Store.owner_phone == normalized)
-                .order_by(Store.id.desc())
-            )
-            stores = list(q.scalars().all())
-    parts: list[str] = []
-    head = "✅ Magazingiz botga ulandi!"
-    if stores:
-        head += "\n\n🏪 <b>Sizning magazingiz</b>"
-    tok_p = await get_electricity_price_per_kw()
-    cur = head
-    for s in stores:
-        block = "\n\n" + store_card_html(s, show_payment=True, tok_price_per_kw=tok_p)
-        if len(cur) + len(block) > 3800:
-            parts.append(cur)
-            cur = block.lstrip("\n")
-        else:
-            cur += block
-    parts.append(cur)
-    for i, p in enumerate(parts):
-        last = i == len(parts) - 1
-        await message.answer(
-            p,
-            parse_mode=ParseMode.HTML,
-            reply_markup=user_main_menu() if last else None,
-        )
+    await send_linked_stores_message(message, message.from_user.id, "✅ Magazingiz botga ulandi!")
 
-    # Egasi endigina ulandi — ilovani shu yerda ko'rsatish eng qulay payt.
-    kb = miniapp_inline_keyboard(is_admin=False)
-    if kb:
-        await message.answer(
-            "📱 Magazin ma'lumotlari, to'lov tarixi va admin bilan suhbat "
-            "— ilovada qulayroq:",
-            reply_markup=kb,
-        )
+
+@router.callback_query(InviteLinkStates.waiting_contact, F.data == INVITE_SKIP_CALLBACK)
+async def on_invite_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    """Telefon mos kelmadi yoki umuman berilmagan — havolaning o'zi orqali ulash."""
+    if not callback.from_user:
+        await callback.answer()
+        return
+    if is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    sid = data.get("invite_store_id")
+    token = data.get("invite_token")
+    if not isinstance(sid, int) or not isinstance(token, str):
+        await state.clear()
+        await callback.answer()
+        if callback.message:
+            await callback.message.answer("Sessiya buzildi. /start dan qayta kiring.")
+        return
+
+    tg = callback.from_user
+    st = await link_store_by_telegram_id(sid, token, tg.id, tg.username, tg.full_name)
+    if not st:
+        await state.clear()
+        await callback.answer()
+        if callback.message:
+            await callback.message.answer("Havola endi yaroqli emas. Admin bilan bog'laning.")
+        return
+
+    await state.clear()
+    await callback.answer("Ulandingiz!")
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await refresh_all_store_rent_state()
+        await send_linked_stores_message(callback.message, tg.id, "✅ Magazingiz botga ulandi!")
 
 
 @router.message(InviteLinkStates.waiting_contact, ~F.contact)
 async def on_invite_need_contact(message: Message) -> None:
     await message.answer(
-        "Kontaktni yuboring (tugma orqali) — magazinni bog'lash uchun zarur.",
+        "Kontaktni yuboring (tugma orqali) — yoki pastdagi tugma orqali "
+        "raqamsiz ulaning.",
         reply_markup=contact_request_keyboard(),
     )
+    await message.answer("👇", reply_markup=invite_skip_keyboard())
 
 
 async def load_user_stores(telegram_id: int) -> list[Store]:
+    """Eganing magazinlarini ikkala mezon bo'yicha topadi: Telegram ID
+    (havola orqali bog'langan) yoki telefon raqami — biri yetarli."""
     await refresh_all_store_rent_state()
     async with async_session_maker() as session:
+        conditions = [Store.owner_telegram_id == telegram_id]
         u = await session.scalar(select(User).where(User.telegram_id == telegram_id))
-        if not u or not u.phone_number:
-            return []
-        raw = u.phone_number.strip()
-        key = normalize_phone(raw) or raw
+        if u and u.phone_number:
+            raw = u.phone_number.strip()
+            key = normalize_phone(raw) or raw
+            conditions.append(Store.owner_phone == key)
         r = await session.execute(
-            select(Store).where(Store.owner_phone == key).order_by(Store.id.desc())
+            select(Store).where(or_(*conditions)).order_by(Store.id.desc())
         )
         return list(r.scalars().all())
 
@@ -199,37 +284,9 @@ async def on_contact(message: Message) -> None:
         await session.commit()
 
     await refresh_all_store_rent_state()
-    stores: list[Store] = []
-    if normalized:
-        async with async_session_maker() as session:
-            q = await session.execute(
-                select(Store)
-                .where(Store.owner_phone == normalized)
-                .order_by(Store.id.desc())
-            )
-            stores = list(q.scalars().all())
-    parts: list[str] = []
-    head = "Rahmat! Ma'lumotlaringiz qabul qilindi."
-    if stores:
-        head += "\n\n🏪 <b>Sizning magazingiz</b>"
-    tok_p = await get_electricity_price_per_kw()
-    cur = head
-    for s in stores:
-        block = "\n\n" + store_card_html(s, show_payment=True, tok_price_per_kw=tok_p)
-        if len(cur) + len(block) > 3800:
-            parts.append(cur)
-            cur = block.lstrip("\n")
-        else:
-            cur += block
-    parts.append(cur)
-
-    for i, p in enumerate(parts):
-        last = i == len(parts) - 1
-        await message.answer(
-            p,
-            parse_mode=ParseMode.HTML,
-            reply_markup=user_main_menu() if last else None,
-        )
+    await send_linked_stores_message(
+        message, message.from_user.id, "Rahmat! Ma'lumotlaringiz qabul qilindi."
+    )
 
 
 @router.message(StateFilter(default_state), F.text == USER_BTN_MY_STORE)
@@ -239,8 +296,8 @@ async def user_my_stores(message: Message) -> None:
     stores = await load_user_stores(message.from_user.id)
     if not stores:
         await message.answer(
-            "Sizning telefon raqamingiz bilan bog'langan magazin topilmadi "
-            "yoki kontakt hali ulangan emas. /start orqali kontaktingizni yuboring.",
+            "Sizga bog'langan magazin topilmadi. Admin yuborgan taklif "
+            "havolasi orqali /start qiling.",
         )
         return
     parts: list[str] = []

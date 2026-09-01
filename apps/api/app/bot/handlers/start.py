@@ -7,6 +7,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import select
 
+from app.bot.handlers.user import (
+    invite_skip_keyboard,
+    link_store_by_telegram_id,
+    send_linked_stores_message,
+)
 from app.bot.keyboards import (
     admin_main_menu,
     contact_request_keyboard,
@@ -17,6 +22,7 @@ from app.bot.states import InviteLinkStates
 from app.config import is_admin
 from app.db.models import Store, User
 from app.db.session import async_session_maker
+from app.domain.rent import refresh_all_store_rent_state
 
 router = Router(name="start")
 
@@ -51,6 +57,18 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
                 "Yordam uchun admin bilan bog'laning.",
             )
             return
+
+        if not (st.owner_phone or "").strip():
+            # Telefon berilmagan — havolaning o'zi (=magazin ID) identifikatsiya
+            # uchun yetarli, kontakt so'ramasdan darhol bog'laymiz.
+            linked = await link_store_by_telegram_id(st.id, payload, tg.id, tg.username, tg.full_name)
+            if not linked:
+                await message.answer("Havola endi yaroqli emas. Admin bilan bog'laning.")
+                return
+            await refresh_all_store_rent_state()
+            await send_linked_stores_message(message, tg.id, "✅ Magazingiz botga ulandi!")
+            return
+
         await state.set_state(InviteLinkStates.waiting_contact)
         await state.update_data(invite_store_id=st.id, invite_token=payload)
         exp = html.escape((st.owner_phone or "").strip() or "—")
@@ -62,6 +80,11 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             f"Kutilayotgan raqam: <code>{exp}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=contact_request_keyboard(),
+        )
+        await message.answer(
+            "Raqamingiz mos kelmasa ham — pastdagi tugma orqali havola "
+            "bo'yicha (raqamsiz) ulanishingiz mumkin:",
+            reply_markup=invite_skip_keyboard(),
         )
         return
 

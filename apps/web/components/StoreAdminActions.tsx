@@ -320,9 +320,19 @@ function InvitePanel({
         <Card>
           <p className="text-sm text-muted">
             Yangi havola yaratilganda{" "}
-            <strong className="text-text">eskisi bekor bo&apos;ladi</strong>. Egasi
-            havolani bosib, <code className="nums">{store.owner_phone}</code> raqamli
-            kontaktini yuborishi kerak.
+            <strong className="text-text">eskisi bekor bo&apos;ladi</strong>.{" "}
+            {store.owner_phone ? (
+              <>
+                Egasi havolani bosib,{" "}
+                <code className="nums">{store.owner_phone}</code> raqamli kontaktini
+                yuborishi kerak (mos kelmasa ham raqamsiz ulanish tugmasi chiqadi).
+              </>
+            ) : (
+              <>
+                Telefon kiritilmagan — egasi havolani bosgan zahoti (hech narsa
+                so&apos;ralmasdan) shu magazinga bog&apos;lanadi.
+              </>
+            )}
           </p>
         </Card>
 

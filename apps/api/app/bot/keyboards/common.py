@@ -10,6 +10,7 @@ from aiogram.types import (
 from app.config import get_settings
 
 BTN_CANCEL = "❌ Bekor qilish"
+ADMIN_BTN_SKIP_PHONE = "⏭ Telefonsiz davom etish"
 USER_BTN_TO_ADMIN = "✉️ Adminga xabar"
 USER_BTN_MY_STORE = "🏪 Meni magazinim"
 
@@ -29,6 +30,7 @@ MSG_MENU_BACK = "⬅️ Asosiy menyuga"
 ALL_MENU_TEXTS = frozenset(
     {
         BTN_CANCEL,
+        ADMIN_BTN_SKIP_PHONE,
         USER_BTN_TO_ADMIN,
         USER_BTN_MY_STORE,
         ADMIN_BTN_NEW,
@@ -85,6 +87,17 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
 def cancel_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=BTN_CANCEL)]],
+        resize_keyboard=True,
+    )
+
+
+def phone_step_keyboard() -> ReplyKeyboardMarkup:
+    """Magazin yaratishda telefon so'ralayotgan qadam — ixtiyoriy, o'tkazib yuborish mumkin."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=ADMIN_BTN_SKIP_PHONE)],
+            [KeyboardButton(text=BTN_CANCEL)],
+        ],
         resize_keyboard=True,
     )
 

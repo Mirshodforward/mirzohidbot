@@ -138,7 +138,7 @@ async def _notify_counterpart(
             from app.services.reminders import _owner_telegram_ids
 
             async with async_session_maker() as s:
-                uids = await _owner_telegram_ids(s, store.owner_phone or "")
+                uids = await _owner_telegram_ids(s, store)
             text = f"🏬 <b>{name}</b>\n\n👤 <b>Admin:</b>\n{body}"
         else:
             uids = list(get_settings().admin_id_set)

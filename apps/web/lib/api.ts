@@ -76,6 +76,7 @@ export interface Store {
   description: string | null;
   address: string | null;
   owner_phone: string | null;
+  owner_telegram_id: number | null;
   store_date: string | null;
   monthly_amount: number | null;
   electricity_kw: number | null;
@@ -152,7 +153,7 @@ export interface StoreCreated {
 
 export interface StoreCreateInput {
   name: string;
-  owner_phone: string;
+  owner_phone?: string;
   address: string;
   monthly_amount: number;
   electricity_kw: number;

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.config import get_settings
 from app.config import is_admin as is_admin_id
@@ -143,11 +143,16 @@ async def logout(response: Response) -> None:
 async def me(user: CurrentUserDep, session: SessionDep) -> MeOut:
     db_user = await session.get(User, user.id)
     count = 0
+    conditions = []
+    if user.telegram_id:
+        conditions.append(Store.owner_telegram_id == user.telegram_id)
     if user.phone_number:
         key = normalize_phone(user.phone_number) or user.phone_number.strip()
+        conditions.append(Store.owner_phone == key)
+    if conditions:
         count = (
             await session.scalar(
-                select(func.count()).select_from(Store).where(Store.owner_phone == key)
+                select(func.count()).select_from(Store).where(or_(*conditions))
             )
             or 0
         )
